@@ -98,8 +98,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         redoc_url="/api/redoc",
         servers=[
             {
-                "url": "http://127.0.0.1:8000",
-                "description": "Desarrollo local",
+                "url": resolved_settings.public_base_url,
+                "description": resolved_settings.server_description,
             }
         ],
         responses=COMMON_PROBLEM_RESPONSES,

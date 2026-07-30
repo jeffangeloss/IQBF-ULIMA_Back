@@ -1,0 +1,79 @@
+# Infraestructura como código del backend IQBF (Render Blueprint).
+#
+# Define los dos recursos del entorno de producción y su vínculo: la base de
+# datos y el servicio web. Está versionado a propósito —igual que las
+# migraciones— para que el entorno sea reproducible y auditable, no el
+# resultado de clicar en un panel.
+#
+# Qué NO vive aquí: ningún secreto. `IQBF_JWT_SECRET` lo genera Render y las
+# variables marcadas `sync: false` se completan a mano en el panel, porque su
+# valor depende de URLs que solo se conocen después del primer despliegue.
+
+databases:
+  - name: iqbf-db
+    databaseName: iqbf
+    user: iqbf
+    plan: free
+    region: oregon
+    postgresMajorVersion: "16"
+
+services:
+  - type: web
+    name: iqbf-api
+    runtime: python
+    plan: free
+    region: oregon
+    repo: https://github.com/jeffangeloss/IQBF-ULIMA_Back
+    branch: main
+    # Las migraciones son idempotentes: registran su versión en
+    # `iqbf.schema_migration` y omiten las ya aplicadas. Encadenarlas al
+    # arranque mantiene el esquema al día en cada despliegue sin depender de
+    # `preDeployCommand`, que el plan gratuito no ofrece. Si una migración
+    # falla, el servicio no arranca: es la conducta correcta para un sistema
+    # fiscalizado.
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m app.cli migrate && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.13"
+
+      - key: IQBF_DATABASE_URL
+        fromDatabase:
+          name: iqbf-db
+          property: connectionString
+
+      # Render genera un valor aleatorio en el primer despliegue y no vuelve a
+      # tocarlo. `app/config.py` rechaza el arranque si el secreto es el de
+      # desarrollo o mide menos de 32 caracteres.
+      - key: IQBF_JWT_SECRET
+        generateValue: true
+
+      - key: IQBF_ENVIRONMENT
+        value: production
+      - key: IQBF_AUTH_MODE
+        value: local
+      - key: IQBF_ACCESS_TOKEN_MINUTES
+        value: "30"
+
+      # Dominio del frontend en Vercel. Se completa tras desplegarlo: hasta
+      # entonces no existe, y dejar un comodín abriría la API a cualquier
+      # origen.
+      - key: IQBF_CORS_ORIGINS
+        sync: false
+
+      # URL pública de esta misma API. Aparece en el bloque `servers` del
+      # OpenAPI que consume el frontend; Render solo la conoce después de
+      # asignar el dominio.
+      - key: IQBF_PUBLIC_BASE_URL
+        sync: false
+
+      # Presupuesto de conexiones: IQBF_POOL_MAX_SIZE x réplicas debe quedar
+      # por debajo de `max_connections` menos una reserva para migraciones y
+      # administración. Ver `.env.production.example`.
+      - key: IQBF_POOL_MIN_SIZE
+        value: "1"
+      - key: IQBF_POOL_MAX_SIZE
+        value: "5"
+      - key: IQBF_POOL_TIMEOUT
+        value: "10"

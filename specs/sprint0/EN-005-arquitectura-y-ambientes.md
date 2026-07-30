@@ -12,7 +12,7 @@ Estado técnico: **Hecho**
 flowchart LR
     U[Usuario en navegador] --> F[React + Vite]
     F -->|/api y Bearer JWT| A[FastAPI]
-    A -->|asyncpg / transacciones| P[(PostgreSQL<br/>esquema iqbf)]
+    A -->|psycopg / transacciones| P[(PostgreSQL<br/>esquema iqbf)]
     A --> O[OpenAPI + logs estructurados]
     M[CLI de migraciones] --> P
     T[Pytest] --> D[(Base desechable)]
@@ -77,6 +77,38 @@ las prácticas que se adoptan, adaptan o rechazan, está en
 
 Los ambientes no comparten base, usuarios, secretos ni archivos de
 configuración. Las pruebas nunca apuntan a una base con datos reales.
+
+## Presupuesto de conexiones
+
+El backend abre un pool de conexiones **por proceso**, en el ciclo de vida de
+`app.application`. El consumo total contra PostgreSQL no lo decide el código
+sino el despliegue, y debe respetar:
+
+```
+IQBF_POOL_MAX_SIZE  x  número de réplicas  <=  max_connections - reserva
+```
+
+La reserva (5-10 conexiones) queda para migraciones, respaldos y `psql` de
+administración. Escalar réplicas sin bajar `IQBF_POOL_MAX_SIZE` en la misma
+proporción agota la base justo bajo carga.
+
+| Réplicas | `IQBF_POOL_MAX_SIZE` | Conexiones | Apto para |
+|---|---|---|---|
+| 1 | 5 | 5 | Alcance actual del sistema |
+| 2 | 5 | 10 | PostgreSQL administrado pequeño |
+| 4 | 5 | 20 | Requiere verificar `max_connections` |
+
+Verifique el límite real con `SHOW max_connections;` antes de escalar.
+
+Este modelo asume un **proceso ASGI de vida larga**: el pool se abre una vez al
+arrancar y se reutiliza. Un despliegue por funciones efímeras (FaaS) viola ese
+supuesto, porque cada instancia abriría su propio pool sin cota global; ahí la
+conexión debe delegarse a un pooler externo (PgBouncer en modo transacción o el
+endpoint agrupado del proveedor) antes de migrar.
+
+Cuando el pool se agota, la API responde `503` con código `SERVICIO_SATURADO` y
+cabecera `Retry-After` tras esperar `IQBF_POOL_TIMEOUT` segundos, en lugar de
+colgar la solicitud o informar un error interno.
 
 ## Política de secretos
 

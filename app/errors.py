@@ -6,10 +6,15 @@ import psycopg
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
 
 
 PROBLEM_MEDIA_TYPE = "application/problem+json"
 logger = logging.getLogger("iqbf.api")
+
+# Segundos sugeridos al cliente antes de reintentar una solicitud rechazada
+# por saturación del pool. Debe ser menor que el tiempo de espera del cliente.
+RETRY_AFTER_SECONDS = 5
 
 
 class ProblemException(Exception):
@@ -150,6 +155,37 @@ def register_exception_handlers(app: FastAPI) -> None:
                 title="Datos inválidos",
                 detail="Revise los campos indicados.",
                 extra={"errors": issues},
+            ),
+        )
+
+    # El pool agotado hereda de psycopg.Error, así que sin estos manejadores
+    # caería en handle_database y se informaría como 500. Es una condición
+    # operativa transitoria, no un fallo de la solicitud: corresponde 503.
+    @app.exception_handler(PoolTimeout)
+    @app.exception_handler(PoolClosed)
+    @app.exception_handler(TooManyRequests)
+    async def handle_pool_saturation(
+        request: Request, error: psycopg.Error
+    ) -> JSONResponse:
+        logger.warning(
+            "Pool de conexiones no disponible (%s) request_id=%s path=%s",
+            type(error).__name__,
+            getattr(request.state, "request_id", ""),
+            request.url.path,
+        )
+        return JSONResponse(
+            status_code=HTTPStatus.SERVICE_UNAVAILABLE,
+            media_type=PROBLEM_MEDIA_TYPE,
+            headers={"Retry-After": str(RETRY_AFTER_SECONDS)},
+            content=_problem_payload(
+                request,
+                status=503,
+                code="SERVICIO_SATURADO",
+                title="Servicio saturado",
+                detail=(
+                    "No hay conexiones disponibles en este momento. "
+                    "Reintente en unos segundos."
+                ),
             ),
         )
 
