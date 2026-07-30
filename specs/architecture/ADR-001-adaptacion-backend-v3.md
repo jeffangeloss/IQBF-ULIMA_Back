@@ -123,8 +123,11 @@ Estas reglas se ejecutan en `tests/test_architecture.py` y
    crezcan, sin crear capas vacías prematuramente.
 4. La comparación celda a celda del RM04 sigue bloqueada según EN-004.
 
-Estas brechas deben conservarse como issues técnicos antes de ampliar los
-módulos afectados.
+Estas brechas ya están materializadas como issues del Project:
+[Back #74](https://github.com/jeffangeloss/IQBF-ULIMA_Back/issues/74) para la
+extracción de servicios/repositorios en S1 y
+[Front #11](https://github.com/jeffangeloss/IQBF-ULIMA_Front/issues/11) para
+separar el mockup al implementar S2.
 
 ## Verificación
 
