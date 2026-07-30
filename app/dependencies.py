@@ -9,7 +9,7 @@ from psycopg import Connection
 from app.config import Settings, get_settings
 from app.database import Database
 from app.errors import ProblemException
-from app.schemas import CurrentUser
+from app.modules.auth.schemas import CurrentUser
 from app.security import decode_access_token
 
 

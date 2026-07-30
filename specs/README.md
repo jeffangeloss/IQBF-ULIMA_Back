@@ -17,10 +17,12 @@ evidencia.
 
 ## Entregas documentadas
 
+- [Sprint 0 — Base funcional y técnica](sprint0/README.md)
 - [Sprint 1 — Acceso y maestros](sprint1/README.md)
 
 ## Evidencia complementaria
 
+- [Decisiones de arquitectura](architecture/README.md)
 - [Trazabilidad de aceptación](../SPRINT1_ACCEPTANCE.md)
 - [Reconciliación Core V3](../CORE_V3_RECONCILIACION.md)
 - [Migraciones y recuperación](../migrations/README.md)

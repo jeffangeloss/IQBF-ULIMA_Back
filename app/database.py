@@ -14,6 +14,7 @@ class Database:
             conninfo=settings.database_url,
             min_size=settings.pool_min_size,
             max_size=settings.pool_max_size,
+            timeout=settings.pool_timeout,
             open=False,
             kwargs={"row_factory": dict_row},
             check=ConnectionPool.check_connection,

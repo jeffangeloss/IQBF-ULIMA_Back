@@ -6,8 +6,9 @@ from psycopg import Connection, sql
 
 from app.dependencies import get_connection, get_current_user, require_roles
 from app.errors import ProblemException
-from app.schemas import (
-    CurrentUser,
+from app.contracts import Page
+from app.modules.auth.schemas import CurrentUser
+from app.modules.insumos.schemas import (
     DensidadCreate,
     DensidadOut,
     InsumoCreate,
@@ -15,7 +16,6 @@ from app.schemas import (
     InsumoState,
     InsumoType,
     InsumoUpdate,
-    Page,
     PresentacionCreate,
     PresentacionOut,
     PresentacionSummary,

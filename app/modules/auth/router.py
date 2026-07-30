@@ -8,7 +8,7 @@ from psycopg import Connection
 from app.config import Settings, get_settings
 from app.dependencies import get_connection, get_current_user
 from app.errors import ProblemException
-from app.schemas import CurrentUser, LoginRequest, TokenResponse
+from app.modules.auth.schemas import CurrentUser, LoginRequest, TokenResponse
 from app.security import create_access_token, verify_password
 
 

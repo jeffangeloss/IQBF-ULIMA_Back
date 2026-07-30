@@ -10,12 +10,12 @@ from psycopg import Connection, sql
 
 from app.dependencies import get_connection, get_current_user, require_roles
 from app.errors import ProblemException
-from app.schemas import (
+from app.modules.auth.schemas import CurrentUser
+from app.modules.catalogs.schemas import (
     CatalogCreate,
     CatalogItem,
     CatalogName,
     CatalogUpdate,
-    CurrentUser,
 )
 
 
