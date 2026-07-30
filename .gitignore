@@ -1,0 +1,17 @@
+.DS_Store
+.env
+.pytest_cache/
+.coverage
+htmlcov/
+__pycache__/
+*.py[cod]
+*.log
+
+# Artefactos históricos/locales: contienen rutas, credenciales de desarrollo
+# o datos de censo que no forman parte del backend publicable.
+carga_censo_v3.py
+bd/
+*.dump
+*.backup
+*.xlsx
+respaldo*/
