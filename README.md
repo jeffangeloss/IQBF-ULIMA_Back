@@ -1,6 +1,7 @@
 # IQBF ULIMA — Backend
 
-API de Sprint 1 para autenticación, roles, alcance organizacional, maestros de
+API IQBF con la base funcional/técnica de Sprint 0 y la implementación de
+Sprint 1 para autenticación, roles, alcance organizacional, maestros de
 insumos, presentaciones y densidades versionadas. Trabaja sobre el esquema
 `iqbf` vigente; no usa ni reinstala el modelo histórico de 31 tablas.
 
@@ -82,6 +83,9 @@ trazabilidad está en
 
 Las especificaciones por historia, enlazadas a los issues reales de GitHub,
 están en [`specs/README.md`](specs/README.md).
+
+La arquitectura, separación de ambientes y política de secretos están en
+[`specs/sprint0/EN-005-arquitectura-y-ambientes.md`](specs/sprint0/EN-005-arquitectura-y-ambientes.md).
 
 ## Datos Core V3 reconciliados
 

@@ -1,4 +1,5 @@
 from http import HTTPStatus
+import logging
 from typing import Any
 
 import psycopg
@@ -8,6 +9,7 @@ from fastapi.responses import JSONResponse
 
 
 PROBLEM_MEDIA_TYPE = "application/problem+json"
+logger = logging.getLogger("iqbf.api")
 
 
 class ProblemException(Exception):
@@ -172,6 +174,12 @@ def register_exception_handlers(app: FastAPI) -> None:
     async def handle_unexpected(
         request: Request, error: Exception
     ) -> JSONResponse:
+        logger.exception(
+            "Error no controlado request_id=%s path=%s",
+            getattr(request.state, "request_id", ""),
+            request.url.path,
+            exc_info=error,
+        )
         return JSONResponse(
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
             media_type=PROBLEM_MEDIA_TYPE,

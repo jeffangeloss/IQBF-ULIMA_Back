@@ -5,7 +5,9 @@ from psycopg import Connection, sql
 
 from app.dependencies import get_connection, require_roles
 from app.errors import ProblemException
-from app.schemas import CurrentUser, Page, UserCreate, UserOut, UserUpdate
+from app.contracts import Page
+from app.modules.auth.schemas import CurrentUser
+from app.modules.users.schemas import UserCreate, UserOut, UserUpdate
 from app.security import hash_password
 
 
