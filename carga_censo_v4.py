@@ -71,6 +71,42 @@ ALIAS_CUSTODIO: dict[str, tuple[str, str]] = {
     "lab docimasia":         ("Lab. Docimasia", "AREA"),
 }
 
+# ─── Equivalencias contra la base destino ───────────────────────────────────
+#
+# La base de produccion ya tiene su propio catalogo de custodios, escrito en
+# mayusculas («PONCE»), y el censo escribe «Silvia Ponce». Sin esta tabla la
+# carga crearia un SEGUNDO investigador para la misma persona — justo el
+# defecto que US-04 existe para evitar — y «cuanto le queda a Ponce» daria una
+# cifra partida en dos.
+EQUIVALENTES_DESTINO: dict[str, list[str]] = {
+    "Silvia Ponce":       ["PONCE", "Ponce", "Silvia Ponce", "SILVIA PONCE"],
+    "Juan Carlos Yacono": ["YACONO", "Yacono", "Juan Yacono", "Juan Carlos Yacono"],
+    "Chasquibol":         ["CHASQUIBOL", "Chasquibol"],
+    "H. Villagarcía":     ["VILLAGARCIA", "Villagarcia", "Villagarcía", "H. Villagarcía"],
+    "Quino":              ["QUINO", "Quino"],
+    "Muedas":             ["MUEDAS", "Muedas"],
+    "La Cruz":            ["LA CRUZ", "La Cruz"],
+    "Académico":          ["ACADÉMICO", "ACADEMICO", "Académico"],
+    "Ing. Civil":         ["ING. CIVIL", "ING CIVIL", "Ing. Civil"],
+    "Lab. Docimasia":     ["DOCIMASIA", "Docimasia", "Lab. Docimasia"],
+}
+
+
+def nombres_equivalentes(canonico: str) -> list[str]:
+    return EQUIVALENTES_DESTINO.get(canonico, [canonico])
+
+
+def lista_sql(valores) -> str:
+    return ", ".join(sql(v) for v in valores)
+
+
+def busca_investigador(canonico: str) -> str:
+    """Sub-consulta que resuelve el custodio reutilizando el que ya exista."""
+    return ("(SELECT id_investigador FROM investigador WHERE nombre IN ("
+            + lista_sql(nombres_equivalentes(canonico))
+            + ") ORDER BY id_investigador LIMIT 1)")
+
+
 # ─── Laboratorios ────────────────────────────────────────────────────────────
 #
 # El rótulo del frasco escribe el laboratorio de seis maneras. Se normaliza al
@@ -366,6 +402,9 @@ def construir(idx, limpias):
         lotes.setdefault(clave_lote, {
             "clave": clave_lote,
             "id_presentacion": id_presentacion,
+            "id_insumo": id_insumo,
+            "codigo_bf_sunat": sunat,
+            "densidad": densidad,
             "numero_lote": recortar(numero_lote, 60),
             "grado_pureza": recortar(g(v, "Grado"), 40),
             "fecha_ingreso": a_fecha(g(v, "Fecha ingreso")),
@@ -429,7 +468,7 @@ def construir(idx, limpias):
 
 # ─── emisión del SQL ─────────────────────────────────────────────────────────
 
-def emitir(datos, descartadas) -> str:
+def emitir(datos, descartadas, reusar: bool = False) -> str:
     o: list[str] = []
     w = o.append
 
@@ -475,13 +514,15 @@ def emitir(datos, descartadas) -> str:
     w("-- Nombres canónicos: ver ALIAS_CUSTODIO en carga_censo_v4.py.")
     for nombre, tipo in datos["investigadores"]:
         lab = LABORATORIO_DE_AREA.get(nombre)
+        equivalentes = nombres_equivalentes(nombre) if reusar else [nombre]
         w("INSERT INTO investigador (nombre, tipo, id_laboratorio)")
         w(f"SELECT {sql(nombre)}, {sql(tipo)}, "
           + (f"(SELECT id_laboratorio FROM laboratorio WHERE nombre = {sql(lab)})"
              if lab else "NULL"))
-        w("  ON CONFLICT (nombre) DO UPDATE SET "
-          "id_laboratorio = COALESCE(EXCLUDED.id_laboratorio, "
-          "investigador.id_laboratorio);")
+        # Solo se crea si NINGUNA de sus grafias existe ya: «PONCE» y «Silvia
+        # Ponce» son la misma persona y no pueden acabar en dos filas.
+        w(f"WHERE NOT EXISTS (SELECT 1 FROM investigador"
+          f" WHERE nombre IN ({lista_sql(equivalentes)}));")
     w("")
 
     w("-- ─── el censo necesita un usuario que lo firme ────────────────────")
@@ -497,55 +538,81 @@ def emitir(datos, descartadas) -> str:
     w("$$;")
     w("")
 
-    w("-- ─── insumos ──────────────────────────────────────────────────────")
-    for i in sorted(datos["insumos"], key=lambda x: x["id"]):
-        w("INSERT INTO insumo (id_insumo, nombre_comercial, tipo, unidad_base, "
-          "densidad_variable, estado)")
-        w(f"VALUES ({sql(i['id'])}, {sql(i['nombre'])}, {sql(i['tipo'])}, "
-          f"{sql(i['unidad_base'])}, {sql(i['densidad_variable'])}, 'VIGENTE')")
-        w("  ON CONFLICT (id_insumo) DO UPDATE SET")
-        w("    nombre_comercial = EXCLUDED.nombre_comercial,")
-        w("    densidad_variable = EXCLUDED.densidad_variable;")
-    w("")
+    if reusar:
+        w("-- ─── insumos, presentaciones y densidades ────────────────────────")
+        w("-- OMITIDOS: la base destino ya tiene sus maestros y manda ella.")
+        w("-- Crear los mios duplicaria presentaciones para el mismo codigo")
+        w("-- SUNAT y partiria en dos el rollup de US-21.")
+        w("")
+    else:
+        w("-- ─── insumos ──────────────────────────────────────────────────────")
 
-    w("-- ─── presentaciones ───────────────────────────────────────────────")
-    for p in sorted(datos["presentaciones"], key=lambda x: x["id"]):
-        w("INSERT INTO presentacion (id_presentacion, id_insumo, codigo_bf_sunat,")
-        w("  codigo_presentacion, concentracion, capacidad, unidad, tipo_envase,")
-        w("  equivalencia_g, densidad, vigencia_desde, estado)")
-        w(f"VALUES ({sql(p['id'])}, {sql(p['id_insumo'])}, "
-          f"{sql(p['codigo_bf_sunat'])}, {sql(p['codigo_presentacion'])},")
-        w(f"  {sql(p['concentracion'])}, {sql(p['capacidad'])}, {sql(p['unidad'])}, "
-          f"{sql(p['tipo_envase'])},")
-        w(f"  {sql(p['equivalencia_g'])}, {sql(p['densidad'])}, "
-          f"{sql(FECHA_CENSO)}, 'VIGENTE')")
-        w("  ON CONFLICT (id_presentacion) DO UPDATE SET")
-        w("    codigo_bf_sunat = EXCLUDED.codigo_bf_sunat,")
-        w("    equivalencia_g = EXCLUDED.equivalencia_g,")
-        w("    densidad = EXCLUDED.densidad;")
-    w("")
+    if not reusar:
+        for i in sorted(datos["insumos"], key=lambda x: x["id"]):
+            w("INSERT INTO insumo (id_insumo, nombre_comercial, tipo, unidad_base, "
+              "densidad_variable, estado)")
+            w(f"VALUES ({sql(i['id'])}, {sql(i['nombre'])}, {sql(i['tipo'])}, "
+              f"{sql(i['unidad_base'])}, {sql(i['densidad_variable'])}, 'VIGENTE')")
+            w("  ON CONFLICT (id_insumo) DO UPDATE SET")
+            w("    nombre_comercial = EXCLUDED.nombre_comercial,")
+            w("    densidad_variable = EXCLUDED.densidad_variable;")
+        w("")
 
-    w("-- ─── densidades versionadas (US-01 · fuente y vigencia) ───────────")
-    for d in sorted(datos["densidades"], key=lambda x: x["id_presentacion"]):
-        w("INSERT INTO densidad_vigencia (id_presentacion, valor, unidad, fuente, "
-          "vigencia_desde)")
-        w(f"SELECT {sql(d['id_presentacion'])}, {sql(d['valor'])}, 'g/mL', "
-          f"{sql(d['fuente'])}, {sql(d['vigencia_desde'])}")
-        w("WHERE NOT EXISTS (SELECT 1 FROM densidad_vigencia dv")
-        w(f"   WHERE dv.id_presentacion = {sql(d['id_presentacion'])}")
-        w(f"     AND dv.vigencia_desde = {sql(d['vigencia_desde'])});")
-    w("")
+        w("-- ─── presentaciones ───────────────────────────────────────────────")
+        for p in sorted(datos["presentaciones"], key=lambda x: x["id"]):
+            w("INSERT INTO presentacion (id_presentacion, id_insumo, codigo_bf_sunat,")
+            w("  codigo_presentacion, concentracion, capacidad, unidad, tipo_envase,")
+            w("  equivalencia_g, densidad, vigencia_desde, estado)")
+            w(f"VALUES ({sql(p['id'])}, {sql(p['id_insumo'])}, "
+              f"{sql(p['codigo_bf_sunat'])}, {sql(p['codigo_presentacion'])},")
+            w(f"  {sql(p['concentracion'])}, {sql(p['capacidad'])}, {sql(p['unidad'])}, "
+              f"{sql(p['tipo_envase'])},")
+            w(f"  {sql(p['equivalencia_g'])}, {sql(p['densidad'])}, "
+              f"{sql(FECHA_CENSO)}, 'VIGENTE')")
+            w("  ON CONFLICT (id_presentacion) DO UPDATE SET")
+            w("    codigo_bf_sunat = EXCLUDED.codigo_bf_sunat,")
+            w("    equivalencia_g = EXCLUDED.equivalencia_g,")
+            w("    densidad = EXCLUDED.densidad;")
+        w("")
+
+        w("-- ─── densidades versionadas (US-01 · fuente y vigencia) ───────────")
+        for d in sorted(datos["densidades"], key=lambda x: x["id_presentacion"]):
+            w("INSERT INTO densidad_vigencia (id_presentacion, valor, unidad, fuente, "
+              "vigencia_desde)")
+            w(f"SELECT {sql(d['id_presentacion'])}, {sql(d['valor'])}, 'g/mL', "
+              f"{sql(d['fuente'])}, {sql(d['vigencia_desde'])}")
+            w("WHERE NOT EXISTS (SELECT 1 FROM densidad_vigencia dv")
+            w(f"   WHERE dv.id_presentacion = {sql(d['id_presentacion'])}")
+            w(f"     AND dv.vigencia_desde = {sql(d['vigencia_desde'])});")
+        w("")
 
     w("-- ─── lotes ────────────────────────────────────────────────────────")
     for lote in sorted(datos["lotes"], key=lambda x: (x["id_presentacion"],
                                                       x["numero_lote"] or "")):
+        if reusar:
+            # La presentacion se resuelve por CODIGO SUNAT contra la que ya
+            # existe. La produccion nombra sus presentaciones de otra forma
+            # (`IQF0102-000112-2-5L`); lo que las identifica de verdad, y lo
+            # que agrupa la declaracion, es el codigo BF.
+            origen = (f"(SELECT p.id_presentacion FROM presentacion p"
+                      f" WHERE p.id_insumo = {sql(lote['id_insumo'])}"
+                      f" AND p.codigo_bf_sunat = {sql(lote['codigo_bf_sunat'])}"
+                      f" ORDER BY p.id_presentacion LIMIT 1)")
+            # Sus insumos tienen densidad_variable = TRUE, asi que la densidad
+            # vive en el LOTE y la presentacion la deja en NULL.
+            densidad = sql(lote.get("densidad"))
+        else:
+            origen = sql(lote["id_presentacion"])
+            densidad = "NULL"
         w("INSERT INTO lote (id_presentacion, numero_lote, grado_pureza,")
-        w("  fecha_ingreso, fecha_caducidad, estado)")
-        w(f"SELECT {sql(lote['id_presentacion'])}, {sql(lote['numero_lote'])}, "
+        w("  fecha_ingreso, fecha_caducidad, densidad, estado)")
+        w(f"SELECT {origen}, {sql(lote['numero_lote'])}, "
           f"{sql(lote['grado_pureza'])},")
-        w(f"  {sql(lote['fecha_ingreso'])}, {sql(lote['fecha_caducidad'])}, 'ACTIVO'")
-        w("WHERE NOT EXISTS (SELECT 1 FROM lote l")
-        w(f"   WHERE l.id_presentacion = {sql(lote['id_presentacion'])}")
+        w(f"  {sql(lote['fecha_ingreso'])}, {sql(lote['fecha_caducidad'])}, "
+          f"{densidad}, 'ACTIVO'")
+        w(f"WHERE {origen} IS NOT NULL")
+        w("  AND NOT EXISTS (SELECT 1 FROM lote l")
+        w(f"   WHERE l.id_presentacion = {origen}")
         w(f"     AND l.numero_lote IS NOT DISTINCT FROM {sql(lote['numero_lote'])});")
     w("")
 
@@ -554,6 +621,17 @@ def emitir(datos, descartadas) -> str:
     w("-- el saldo solo lo escribe el trigger del kardex (fn_frasco_guardia).")
     for f in datos["frascos"]:
         pres, numero = f["clave_lote"]
+        lote_de = next(x for x in datos["lotes"] if x["clave"] == f["clave_lote"])
+        if reusar:
+            pres_sql = (f"(SELECT p.id_presentacion FROM presentacion p"
+                        f" WHERE p.id_insumo = {sql(lote_de['id_insumo'])}"
+                        f" AND p.codigo_bf_sunat = {sql(lote_de['codigo_bf_sunat'])}"
+                        f" ORDER BY p.id_presentacion LIMIT 1)")
+            custodio_sql = busca_investigador(f["custodio"]) if f["custodio"] else "NULL"
+        else:
+            pres_sql = sql(pres)
+            custodio_sql = (f"(SELECT id_investigador FROM investigador"
+                            f" WHERE nombre = {sql(f['custodio'])})")
         w(f"-- fila {f['fila_excel']} del censo")
         w("INSERT INTO frasco (id_frasco, id_lote, id_investigador, id_ubicacion,")
         w("  id_laboratorio_actual,")
@@ -561,8 +639,7 @@ def emitir(datos, descartadas) -> str:
         w("  volumen_inicial_ml, fuente_tara, fecha_pesaje, condicion_envase,")
         w("  existe, estado, observaciones)")
         w(f"SELECT {sql(f['id'])}, l.id_lote,")
-        w(f"  (SELECT id_investigador FROM investigador WHERE nombre = "
-          f"{sql(f['custodio'])}),")
+        w(f"  {custodio_sql},")
         w(f"  (SELECT id_ubicacion FROM ubicacion WHERE codigo = "
           f"{sql(f['ubicacion'])}),")
         w(f"  (SELECT id_laboratorio FROM laboratorio WHERE nombre = "
@@ -573,7 +650,7 @@ def emitir(datos, descartadas) -> str:
           f"{sql(f['fecha_pesaje'])}, {sql(f['condicion_envase'])},")
         w(f"  TRUE, 'EN_USO', {sql(f['observaciones'])}")
         w("  FROM lote l")
-        w(f" WHERE l.id_presentacion = {sql(pres)}")
+        w(f" WHERE l.id_presentacion = {pres_sql}")
         w(f"   AND l.numero_lote IS NOT DISTINCT FROM {sql(numero)}")
         w("  ON CONFLICT (id_frasco) DO UPDATE SET")
         w("    id_investigador = EXCLUDED.id_investigador,")
@@ -599,18 +676,54 @@ def emitir(datos, descartadas) -> str:
         w("  fecha_hora, fecha_operacion, registrado_por, saldo_resultante_g)")
         w(f"SELECT {sql(f['id'])}, 'ENTRADA', 'censo_inicial', {sql(f['neto_g'])},")
         w(f"  {sql(f['neto_g'])}, 'g',")
-        w(f"  (SELECT id_investigador FROM investigador WHERE nombre = "
-          f"{sql(f['custodio'])}),")
+        w(f"  {busca_investigador(f['custodio']) if (reusar and f['custodio']) else ('(SELECT id_investigador FROM investigador WHERE nombre = ' + sql(f['custodio']) + ')')},")
         w(f"  {sql(f['fecha_pesaje'])}, {sql(FECHA_CENSO)}, u.id_usuario, 0")
         w("  FROM usuario u")
+        w("  WHERE EXISTS (SELECT 1 FROM frasco f2")
+        w(f"     WHERE f2.id_frasco = {sql(f['id'])})")
         # Recargar el censo no puede volver a sumar el saldo: el kardex es
         # inmutable y un segundo censo_inicial duplicaría las existencias.
-        w("  WHERE NOT EXISTS (SELECT 1 FROM kardex k")
+        w("    AND NOT EXISTS (SELECT 1 FROM kardex k")
         w(f"     WHERE k.id_frasco = {sql(f['id'])}")
         w("       AND k.motivo = 'censo_inicial')")
         w("  ORDER BY u.id_usuario LIMIT 1;")
     w("")
 
+    w("-- ─── informe: que entro, que no, y que no cuadra ────────────────")
+    w("-- Un frasco cuya presentacion no existe en la base destino NO se")
+    w("-- carga. Es deliberado: colgarlo de otra presentacion falsearia el")
+    w("-- codigo con el que se declara a SUNAT.")
+    w("DO $$")
+    w("DECLARE")
+    w("  v_falta TEXT;")
+    w("  v_desborde TEXT;")
+    w("BEGIN")
+    w("  SELECT string_agg(x.cod, ', ') INTO v_falta FROM (VALUES")
+    for indice, f in enumerate(datos["frascos"]):
+        coma = "," if indice < len(datos["frascos"]) - 1 else ""
+        w(f"    ({sql(f['id'])}){coma}")
+    w("  ) AS x(cod)")
+    w("  WHERE NOT EXISTS (SELECT 1 FROM frasco f WHERE f.id_frasco = x.cod);")
+    w("  IF v_falta IS NOT NULL THEN")
+    w("    RAISE WARNING 'NO CARGADOS (su presentacion no existe en esta base): %',")
+    w("      v_falta;")
+    w("  END IF;")
+    w("")
+    w("  SELECT string_agg(f.id_frasco || ' (' ||")
+    w("           round(100 * f.peso_neto_actual_g / p.equivalencia_g) || '%%)', ', ')")
+    w("    INTO v_desborde")
+    w("    FROM frasco f")
+    w("    JOIN lote l         ON l.id_lote = f.id_lote")
+    w("    JOIN presentacion p ON p.id_presentacion = l.id_presentacion")
+    w("   WHERE p.equivalencia_g > 0")
+    w("     AND f.peso_neto_actual_g > p.equivalencia_g * 1.10;")
+    w("  IF v_desborde IS NOT NULL THEN")
+    w("    RAISE WARNING 'CONTENIDO MAYOR QUE EL NOMINAL DE SU PRESENTACION: %',")
+    w("      v_desborde;")
+    w("  END IF;")
+    w("END;")
+    w("$$;")
+    w("")
     w("-- ─── comprobación: la carga se revierte si algo no cuadra ─────────")
     w("DO $$")
     w("DECLARE v_malos INTEGER;")
@@ -634,6 +747,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--salida", type=Path,
                         default=Path("bd/carga_censo_liquidos.sql"))
+    parser.add_argument("--reusar-maestros", action="store_true",
+                        help="no crea insumos ni presentaciones: reutiliza los "
+                             "de la base destino, resolviendo por codigo SUNAT")
     parser.add_argument("--filas", type=int, nargs="*",
                         help="filas del Excel; por defecto todas las ¿Existe?=Sí")
     args = parser.parse_args()
@@ -643,7 +759,8 @@ def main() -> int:
 
     salida = args.salida
     salida.parent.mkdir(parents=True, exist_ok=True)
-    salida.write_text(emitir(datos, descartadas), encoding="utf-8")
+    salida.write_text(emitir(datos, descartadas, args.reusar_maestros),
+                      encoding="utf-8")
 
     print(f"SQL escrito en {salida}")
     print(f"  insumos        {len(datos['insumos']):>3}")
