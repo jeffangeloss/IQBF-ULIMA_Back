@@ -8554,6 +8554,17 @@
               }
             ],
             "title": "Descripcion"
+          },
+          "exige_autorizacion": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exige Autorizacion"
           }
         },
         "type": "object",
