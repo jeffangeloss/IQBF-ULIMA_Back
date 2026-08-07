@@ -59,6 +59,18 @@ _COLUMNAS_RESUMEN = """
 """
 
 
+#: Órdenes que el usuario puede elegir. Se traducen aquí y no se interpolan
+#: desde la petición: un ORDER BY que venga del cliente es una inyección.
+ORDENES = {
+    "alerta": "v.alerta_prioritaria, v.nombre_comercial, v.id_frasco",
+    "insumo": "v.nombre_comercial, v.id_frasco",
+    "saldo": "v.peso_neto_actual_g DESC NULLS LAST, v.id_frasco",
+    "caducidad": "v.fecha_caducidad NULLS LAST, v.id_frasco",
+    "ubicacion": "v.casillero, v.nivel, v.posicion, v.id_frasco",
+    "custodio": "v.custodio NULLS LAST, v.id_frasco",
+}
+
+
 def _filtros(
     q: str | None,
     laboratorio: int | None,
@@ -66,16 +78,30 @@ def _filtros(
     insumo: str | None,
     estado_caducidad: str | None,
     solo_con_saldo: bool,
+    ubicacion: int | None = None,
+    estado_frasco: str | None = None,
 ) -> tuple[str, list[Any]]:
-    condiciones: list[str] = ["v.estado_frasco <> 'DADO_DE_BAJA'"]
+    # Por defecto las bajas no se listan, pero se pueden pedir: un frasco dado
+    # de baja sigue existiendo en el historial y hay que poder mirarlo.
+    condiciones: list[str] = []
+    if estado_frasco:
+        condiciones.append("v.estado_frasco = %s")
+    else:
+        condiciones.append("v.estado_frasco <> 'DADO_DE_BAJA'")
     params: list[Any] = []
 
+    if estado_frasco:
+        params.append(estado_frasco)
     if q:
+        # El custodio entra en la caja de texto: «lo de Ponce» es una búsqueda
+        # tan legítima como «HCl».
         condiciones.append(
-            "fn_frasco_coincide(v.id_frasco, v.id_insumo, v.nombre_comercial,"
+            "(fn_frasco_coincide(v.id_frasco, v.id_insumo, v.nombre_comercial,"
             " v.codigo_bf_sunat, v.id_presentacion, v.numero_lote, %s)"
+            " OR normalizar_busqueda(COALESCE(v.custodio, ''))"
+            "    LIKE '%%' || normalizar_busqueda(%s) || '%%')"
         )
-        params.append(q)
+        params.extend([q, q])
     if laboratorio is not None:
         # -1 es «sin laboratorio asignado»: una pregunta abierta que hay que
         # poder listar, no un valor que se pueda esconder.
@@ -93,6 +119,12 @@ def _filtros(
     if estado_caducidad:
         condiciones.append("v.estado_caducidad = %s")
         params.append(estado_caducidad)
+    if ubicacion is not None:
+        if ubicacion == -1:
+            condiciones.append("v.id_ubicacion IS NULL")
+        else:
+            condiciones.append("v.id_ubicacion = %s")
+            params.append(ubicacion)
     if solo_con_saldo:
         condiciones.append("v.peso_neto_actual_g > 0")
 
@@ -115,6 +147,14 @@ def list_frascos(
         Literal["VIGENTE", "POR_VENCER", "VENCIDO", "POR_CONFIRMAR"] | None,
         Query(),
     ] = None,
+    ubicacion: Annotated[int | None, Query()] = None,
+    estado_frasco: Annotated[
+        Literal["EN_USO", "AGOTADO", "DADO_DE_BAJA"] | None, Query()
+    ] = None,
+    orden: Annotated[
+        Literal["alerta", "insumo", "saldo", "caducidad", "ubicacion", "custodio"],
+        Query(),
+    ] = "alerta",
     solo_con_saldo: Annotated[bool, Query()] = False,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
@@ -126,7 +166,8 @@ def list_frascos(
     encuentra también los frascos rotulados «Ethanol» o «Alcohol etílico».
     """
     where, params = _filtros(
-        q, laboratorio, custodio, insumo, estado_caducidad, solo_con_saldo
+        q, laboratorio, custodio, insumo, estado_caducidad, solo_con_saldo,
+        ubicacion, estado_frasco,
     )
     total = connection.execute(
         f"SELECT count(*) AS total FROM v_alertas_v4 v {where}", params
@@ -136,7 +177,7 @@ def list_frascos(
         SELECT {_COLUMNAS_RESUMEN}
           FROM v_alertas_v4 v
           {where}
-         ORDER BY v.alerta_prioritaria, v.nombre_comercial, v.id_frasco
+         ORDER BY {ORDENES[orden]}
          LIMIT %s OFFSET %s
         """,
         [*params, page_size, (page - 1) * page_size],
@@ -154,16 +195,11 @@ def _movimientos(connection: Connection, id_frasco: str) -> list[MovimientoOut]:
         """
         SELECT k.id_movimiento, k.tipo_movimiento, k.motivo, k.cantidad_g,
                k.cantidad_registrada, k.unidad_registrada, k.densidad_aplicada,
-               k.saldo_resultante_g, k.peso_antes_g, k.fecha_hora,
-               k.fecha_operacion, k.curso,
-               u.nombre AS registrado_por,
-               COALESCE(dest.nombre, orig.nombre) AS investigador
-          FROM kardex k
-          LEFT JOIN usuario u      ON u.id_usuario = k.registrado_por
-          LEFT JOIN investigador dest
-                 ON dest.id_investigador = k.id_investigador_destinatario
-          LEFT JOIN investigador orig
-                 ON orig.id_investigador = k.id_investigador_origen
+               k.fuente_densidad, k.formula_conversion, k.origen_cantidad,
+               k.saldo_despues_g AS saldo_resultante_g,
+               k.saldo_antes_g AS peso_antes_g, k.fecha_hora,
+               k.fecha_operacion, k.curso, k.registrado_por, k.investigador
+          FROM v_kardex_detalle k
          WHERE k.id_frasco = %s
          ORDER BY k.fecha_hora DESC, k.id_movimiento DESC
         """,

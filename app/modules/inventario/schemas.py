@@ -73,6 +73,12 @@ class MovimientoOut(ApiModel):
     registrado_por: str | None
     investigador: str | None
     curso: str | None
+    #: US-036 · de dónde salió el factor y qué cuenta se hizo. Sin esto, al
+    #: mirar un movimiento no se sabe si el 1,18 venía de la etiqueta del
+    #: fabricante o de una tabla de referencia — y eso es lo que se defiende.
+    fuente_densidad: str | None = None
+    formula_conversion: str | None = None
+    origen_cantidad: str | None = None
 
 
 class FrascoDetalle(FrascoResumen):

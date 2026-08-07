@@ -3288,6 +3288,61 @@
             }
           },
           {
+            "name": "ubicacion",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Ubicacion"
+            }
+          },
+          {
+            "name": "estado_frasco",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "EN_USO",
+                    "AGOTADO",
+                    "DADO_DE_BAJA"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Estado Frasco"
+            }
+          },
+          {
+            "name": "orden",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "alerta",
+                "insumo",
+                "saldo",
+                "caducidad",
+                "ubicacion",
+                "custodio"
+              ],
+              "type": "string",
+              "default": "alerta",
+              "title": "Orden"
+            }
+          },
+          {
             "name": "solo_con_saldo",
             "in": "query",
             "required": false,
@@ -7933,6 +7988,39 @@
               }
             ],
             "title": "Curso"
+          },
+          "fuente_densidad": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fuente Densidad"
+          },
+          "formula_conversion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Formula Conversion"
+          },
+          "origen_cantidad": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origen Cantidad"
           }
         },
         "type": "object",

@@ -35,8 +35,12 @@ def escenario(db_connection):
         """INSERT INTO laboratorio (nombre, codigo)
            VALUES ('Lab Prueba Alfa', 'LAB-TEST-A'), ('Lab Prueba Beta', 'LAB-TEST-B')
            ON CONFLICT DO NOTHING""",
-        """INSERT INTO investigador (nombre, tipo)
-           VALUES ('Custodio Alfa', 'PERSONA'), ('Custodio Beta', 'PERSONA')
+        # Todo custodio pertenece a algún sitio (US-005): la restricción
+        # ck_investigador_adscripcion lo exige y la fixture debe reflejarlo.
+        """INSERT INTO investigador (nombre, tipo, id_laboratorio)
+           SELECT v.nombre, 'PERSONA',
+                  (SELECT id_laboratorio FROM laboratorio WHERE codigo = 'LAB-TEST-A')
+             FROM (VALUES ('Custodio Alfa'), ('Custodio Beta')) AS v(nombre)
            ON CONFLICT DO NOTHING""",
         """INSERT INTO lote (id_presentacion, numero_lote, fecha_caducidad, estado)
            VALUES ('TEST-HCL-P', 'LOTE-TEST-1', '2030-01-01', 'ACTIVO')
@@ -68,8 +72,10 @@ def escenario(db_connection):
         VALUES
           ('TEST-FRASCO-CON-TARA', %(lote)s, %(alfa)s, %(lab)s,
            4200, 1250, 0, 'Sellado', 'EN_USO'),
-          -- Sin tara: su saldo es INDETERMINADO, no cero.
-          ('TEST-FRASCO-SIN-TARA', %(lote)s, %(alfa)s, NULL,
+          -- Sin tara: su saldo es INDETERMINADO, no cero. Y sin custodio, para
+          -- que sirva de caso «sin laboratorio asignado»: el frasco hereda el
+          -- laboratorio de su custodio cuando el rótulo no lo dice.
+          ('TEST-FRASCO-SIN-TARA', %(lote)s, NULL, NULL,
            4200, NULL, NULL, 'Abierto', 'EN_USO')
         ON CONFLICT DO NOTHING
         """,
@@ -507,3 +513,96 @@ def test_una_ubicacion_en_uso_no_se_puede_borrar(db_connection, escenario):
         db_connection.execute(
             "DELETE FROM ubicacion WHERE codigo = 'UBI-BORRAR'"
         )
+
+
+def test_us008_un_maestro_inactivo_no_admite_movimientos(
+    client: TestClient, admin_headers, escenario, db_connection
+):
+    """US-008: un insumo retirado no puede seguir consumiéndose por descuido.
+
+    La salida existe —reactivarlo— porque el producto físico sigue en la balda
+    y hay que poder agotarlo, pero exige una acción consciente y auditada.
+    """
+    db_connection.execute(
+        "SELECT set_config('iqbf.change_reason', 'Retirada de prueba', false)"
+    )
+    db_connection.execute(
+        "UPDATE insumo SET estado = 'INACTIVO' WHERE id_insumo = 'TEST-HCL'"
+    )
+    try:
+        respuesta = client.post(
+            "/api/movimientos/consumo",
+            headers=admin_headers,
+            json={
+                "id_frasco": "TEST-FRASCO-CON-TARA",
+                "cantidad": "1",
+                "unidad": "g",
+                "id_investigador": escenario["alfa"],
+            },
+        )
+        assert respuesta.status_code == 422, respuesta.text
+        assert "inactiv" in respuesta.json()["detail"].lower()
+    finally:
+        db_connection.execute(
+            "SELECT set_config('iqbf.change_reason', 'Fin de la prueba', false)"
+        )
+        db_connection.execute(
+            "UPDATE insumo SET estado = 'VIGENTE' WHERE id_insumo = 'TEST-HCL'"
+        )
+
+
+def test_us036_el_movimiento_dice_de_donde_salio_el_factor(
+    client: TestClient, admin_headers, escenario
+):
+    """US-036: la conversión se guarda escrita, con su procedencia.
+
+    Guardar el número 1,18 sin decir si venía de la etiqueta del fabricante o
+    de una tabla de referencia deja la declaración sin defensa.
+    """
+    client.post(
+        "/api/movimientos/consumo",
+        headers=admin_headers,
+        json={
+            "id_frasco": "TEST-FRASCO-CON-TARA",
+            "cantidad": "10",
+            "unidad": "mL",
+            "id_investigador": escenario["alfa"],
+        },
+    )
+    ficha = client.get(
+        "/api/frascos/TEST-FRASCO-CON-TARA", headers=admin_headers
+    ).json()
+    ultimo = ficha["movimientos"][0]
+    assert ultimo["origen_cantidad"] == "volumen convertido"
+    assert "g/mL" in ultimo["formula_conversion"]
+    assert ultimo["fuente_densidad"]
+
+
+def test_us018_filtros_y_orden_del_inventario(
+    client: TestClient, admin_headers, escenario
+):
+    """US-018: por ubicación, por estado del frasco y con orden elegible."""
+    for parametros in (
+        {"orden": "saldo"}, {"orden": "caducidad"}, {"orden": "ubicacion"},
+        {"estado_frasco": "EN_USO"}, {"ubicacion": -1},
+    ):
+        respuesta = client.get(
+            "/api/frascos", headers=admin_headers, params=parametros
+        )
+        assert respuesta.status_code == 200, f"{parametros}: {respuesta.text}"
+
+    # Las bajas no se listan por defecto pero se pueden pedir: un frasco dado
+    # de baja sigue existiendo en el historial.
+    baja = client.get(
+        "/api/frascos", headers=admin_headers,
+        params={"estado_frasco": "DADO_DE_BAJA"},
+    )
+    assert baja.status_code == 200
+
+    # El custodio entra por la caja de texto: «lo de Alfa» es una búsqueda
+    # tan legítima como «HCl».
+    por_custodio = client.get(
+        "/api/frascos", headers=admin_headers, params={"q": "Custodio Alfa"}
+    )
+    assert por_custodio.status_code == 200
+    assert por_custodio.json()["total"] >= 1
