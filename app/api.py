@@ -12,6 +12,7 @@ from app import __version__
 from app.contracts import Health
 from app.dependencies import get_connection
 from app.modules.auth.router import router as auth_router
+from app.modules.autorizaciones.router import router as autorizaciones_router
 from app.modules.catalogs.router import router as catalogs_router
 from app.modules.insumos.router import router as insumos_router
 from app.modules.inventario.router import router as inventario_router
@@ -37,6 +38,7 @@ ROUTERS = (
     users_router,
     insumos_router,
     inventario_router,
+    autorizaciones_router,
     catalogs_router,
     system_router,
 )

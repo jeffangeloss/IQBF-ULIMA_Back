@@ -360,6 +360,79 @@ def declaracion_sunat(
     )
 
 
+
+def _verificar_autorizacion(
+    connection: Connection,
+    id_frasco: str,
+    id_investigador: int,
+    cantidad_g: Decimal,
+    fecha: Any = None,
+) -> None:
+    """US-027 · Ningún consumo por encima de lo autorizado.
+
+    El control lo enciende el establecimiento (`exige_autorizacion`), no el
+    programa. Nace apagado: encenderlo con cero autorizaciones cargadas dejaría
+    al laboratorio sin poder registrar nada, y un control que obliga a
+    saltárselo el primer día no es un control — es un estorbo que enseña a
+    ignorarlo.
+
+    Cuando está encendido, el motivo exacto se devuelve y se muestra: no es lo
+    mismo «no tiene autorización» que «se le acabó», y la salida es distinta.
+    """
+    # El establecimiento del frasco se busca por su ubicación, y si no la tiene,
+    # por el laboratorio del frasco o el de su custodio. Si aun así no se
+    # resuelve, se aplica la política de CUALQUIER establecimiento que la
+    # exija: un frasco sin ubicación no puede ser la puerta de atrás del
+    # control. Fallar en abierto aquí sería peor que no tener control, porque
+    # nadie se enteraría.
+    exige = connection.execute(
+        """
+        SELECT COALESCE(
+                 (SELECT e.exige_autorizacion
+                    FROM frasco f
+                    LEFT JOIN ubicacion u    ON u.id_ubicacion = f.id_ubicacion
+                    LEFT JOIN investigador i ON i.id_investigador = f.id_investigador
+                    LEFT JOIN laboratorio lab
+                           ON lab.id_laboratorio = COALESCE(f.id_laboratorio_actual,
+                                                            i.id_laboratorio)
+                    JOIN establecimiento e
+                      ON e.id_establecimiento = COALESCE(u.id_establecimiento,
+                                                         lab.id_establecimiento)
+                   WHERE f.id_frasco = %s),
+                 (SELECT bool_or(exige_autorizacion) FROM establecimiento),
+                 FALSE
+               ) AS exige
+        """,
+        (id_frasco,),
+    ).fetchone()
+    if not (exige and exige["exige"]):
+        return
+
+    veredicto = connection.execute(
+        "SELECT * FROM fn_autorizacion_para_consumo(%s, %s, %s, COALESCE(%s, CURRENT_DATE))",
+        (id_investigador, id_frasco, cantidad_g, fecha),
+    ).fetchone()
+    motivo = (veredicto or {}).get("motivo_rechazo")
+    if motivo is None:
+        return
+
+    detalle = {
+        "SIN_AUTORIZACION":
+            "No hay ninguna autorización de uso para este investigador y este "
+            "insumo. Solicite una excepción si el consumo debe hacerse igual.",
+        "AUTORIZACION_NO_VIGENTE":
+            "La autorización existe pero no está vigente en esta fecha "
+            "(en borrador, revocada o fuera de plazo).",
+        "SALDO_AUTORIZADO_INSUFICIENTE":
+            "La autorización no tiene saldo suficiente: quedan "
+            f"{(veredicto or {}).get('disponible_g')} g autorizados.",
+    }[motivo]
+    raise ProblemException(
+        409, "AUTORIZACION_INSUFICIENTE", "Consumo no autorizado", detalle,
+        field="id_investigador",
+    )
+
+
 @router.post(
     "/movimientos/consumo",
     response_model=ConsumoOut,
@@ -464,6 +537,11 @@ def registrar_consumo(
             "La cantidad convertida a gramos debe ser mayor que cero.",
             field="cantidad",
         )
+
+    _verificar_autorizacion(
+        connection, payload.id_frasco, payload.id_investigador, cantidad_g,
+        payload.fecha_operacion,
+    )
 
     # El saldo lo mueve el trigger; aquí solo se inserta el hecho. Saldo
     # insuficiente (US-12), custodia ajena (US-13) y saldo indeterminado los
@@ -615,6 +693,11 @@ def registrar_consumo_por_pesada(
             ).fetchone()
             id_ajuste = fila_ajuste["id_movimiento"]
             ajuste_g = descuadre
+
+    _verificar_autorizacion(
+        connection, payload.id_frasco, payload.id_investigador, consumo,
+        payload.fecha_operacion,
+    )
 
     fila = connection.execute(
         """
