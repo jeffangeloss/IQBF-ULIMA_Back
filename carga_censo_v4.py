@@ -66,11 +66,30 @@ ALIAS_CUSTODIO: dict[str, tuple[str, str]] = {
     "quino":                 ("Quino", "PERSONA"),
     "academico (muedas)":    ("Muedas", "PERSONA"),
     "academico (la cruz)":   ("La Cruz", "PERSONA"),
+    # 2026-08-07 · Al ampliar la carga de 19 a 68 frascos aparecieron grafías
+    # nuevas. «Prof. Yacono» habría creado un SEGUNDO Juan Carlos Yacono, que
+    # es exactamente el defecto que esta tabla existe para evitar: «cuánto le
+    # queda a Yacono» habría dado una cifra partida en dos.
+    "prof. yacono":          ("Juan Carlos Yacono", "PERSONA"),
+    "prof yacono":           ("Juan Carlos Yacono", "PERSONA"),
+    "sanabria":              ("Sanabria", "PERSONA"),
+    "muedas":                ("Muedas", "PERSONA"),
+    "la cruz":               ("La Cruz", "PERSONA"),
+    "w. hernandez":          ("W. Hernández", "PERSONA"),
+    "hernandez":             ("W. Hernández", "PERSONA"),
+    "montoya":               ("Montoya", "PERSONA"),
+    "a. gutarra":            ("A. Gutarra", "PERSONA"),
+    "gutarra":               ("A. Gutarra", "PERSONA"),
+    "arroyo":                ("Arroyo", "PERSONA"),
     # Áreas: el censo no llegó a nombrar a la persona responsable.
     "academico":             ("Académico", "AREA"),
     "ing. civil":            ("Ing. Civil", "AREA"),
     "ing civil":             ("Ing. Civil", "AREA"),
     "lab docimasia":         ("Lab. Docimasia", "AREA"),
+    "lab. docimasia":        ("Lab. Docimasia", "AREA"),
+    "docimasia":             ("Lab. Docimasia", "AREA"),
+    "lab alimentos":         ("Lab. Alimentos", "AREA"),
+    "lab. alimentos":        ("Lab. Alimentos", "AREA"),
 }
 
 # ─── Equivalencias contra la base destino ───────────────────────────────────
@@ -129,11 +148,27 @@ LABORATORIO_ROTULO = {
     "faugro microb":  "FAUGRO Microbiología",
 }
 
+# ─── Insumos cuyo código cubre dos estados físicos ───────────────────────────
+#
+# El modelo guarda UN estado por insumo, y el censo trae códigos que cubren
+# dos. Aquí se declara cuál manda; los frascos del otro estado se apartan con
+# su motivo en vez de forzar el modelo.
+#
+#   IQF0708 · hidróxido de sodio. Aparece como disolución de 1 L y como sólido
+#     de 1 kg. Manda LÍQUIDO porque la base ya lo tiene así desde la carga del
+#     2026-08-06, con un frasco colgando: cambiarle el estado ahora dejaría
+#     huérfano lo ya cargado. Los 11 frascos de sosa sólida necesitan su propio
+#     código IQF — es una decisión del laboratorio, no del cargador.
+ESTADO_INSUMO = {
+    "IQF0708": "LIQUIDO",
+}
+
 # Custodios que son un ÁREA y no una persona: su laboratorio es él mismo.
 LABORATORIO_DE_AREA = {
     "Ing. Civil":     "Ingeniería Civil",
     "Lab. Docimasia": "Docimasia",
     "Académico":      "Académico",
+    "Lab. Alimentos": "Laboratorio de Alimentos",
 }
 
 # El nombre del insumo se toma del prefijo IQF####, no de la celda «Insumo»:
@@ -264,6 +299,21 @@ RE_UBICACION = re.compile(
     re.IGNORECASE)
 
 
+def densidad_de_etiqueta(texto) -> Decimal | None:
+    """«1.39 kg/L» → 1.39. La etiqueta la escribe con su unidad detrás.
+
+    kg/L y g/mL son la misma cifra, así que no hay conversión que hacer. Se
+    rechaza cualquier otra unidad antes que interpretarla mal.
+    """
+    t = limpiar(texto)
+    if not t:
+        return None
+    m = re.match(r"^([\d.,]+)\s*(kg/L|g/mL|g/ml|kg/l)?$", t, re.IGNORECASE)
+    if not m:
+        return None
+    return a_decimal(m.group(1))
+
+
 def parsear_presentacion(texto: str) -> tuple[Decimal, str, str | None]:
     """«2.5 L, botella de VIDRIO AMBAR» → (2.5, 'L', 'Botella de vidrio ámbar')."""
     t = limpiar(texto) or ""
@@ -332,7 +382,60 @@ def leer_censo(filas_pedidas: list[int] | None):
             descartadas.append((n, codigo.lstrip("'"), bloqueos))
         else:
             limpias.append((n, filas[n]))
+
+    limpias, mixtos = separar_estados_mixtos(idx, limpias)
+    descartadas.extend(mixtos)
+    descartadas.sort(key=lambda d: d[0])
     return idx, limpias, descartadas
+
+
+def separar_estados_mixtos(idx, limpias):
+    """Un insumo no puede ser líquido y sólido a la vez.
+
+    `IQF0708` aparece con presentaciones de 1 L (sosa en disolución) y de 1 kg
+    (sosa sólida): dos productos distintos bajo un mismo código. El modelo
+    guarda UN estado por insumo, así que se carga el que describen la mayoría
+    de sus presentaciones y el otro se aparta con su motivo.
+
+    No es una decisión técnica que convenga esconder: o la disolución merece su
+    propio código, o lo merece el sólido. Se apunta para el laboratorio.
+    """
+    from collections import Counter, defaultdict
+
+    estado_de = {}
+    por_insumo = defaultdict(list)
+    for n, v in limpias:
+        codigo = (limpiar(v[idx["Código interno"]]) or "").lstrip("'")
+        _cap, unidad, _env = parsear_presentacion(v[idx["Presentación"]])
+        estado_de[n] = "SOLIDO" if unidad in ("g", "kg") else "LIQUIDO"
+        por_insumo[codigo.split("-")[0]].append(n)
+
+    minoritarias = set()
+    for insumo, filas_ in por_insumo.items():
+        cuenta = Counter(estado_de[n] for n in filas_)
+        if len(cuenta) < 2:
+            continue
+        # Lo declarado en ESTADO_INSUMO manda sobre el recuento: la mayoría no
+        # sabe qué hay ya cargado en la base de destino.
+        manda = ESTADO_INSUMO.get(insumo) or cuenta.most_common(1)[0][0]
+        for n in filas_:
+            if estado_de[n] != manda:
+                minoritarias.add(n)
+
+    quedan, apartadas = [], []
+    for n, v in limpias:
+        if n not in minoritarias:
+            quedan.append((n, v))
+            continue
+        codigo = (limpiar(v[idx["Código interno"]]) or f"fila {n}").lstrip("'")
+        insumo = codigo.split("-")[0]
+        otro = "sólido" if estado_de[n] == "LIQUIDO" else "líquido"
+        apartadas.append((n, codigo, [
+            f"C10 el insumo {insumo} aparece como {estado_de[n].lower()} y "
+            f"como {otro} en el censo; el modelo guarda un solo estado por "
+            f"insumo y manda el de sus otras presentaciones. Este frasco "
+            f"necesita su propio código."]))
+    return quedan, apartadas
 
 
 def construir(idx, limpias):
@@ -351,8 +454,35 @@ def construir(idx, limpias):
         id_presentacion = f"{id_insumo}-{segmento}"
 
         capacidad, unidad, envase = parsear_presentacion(g(v, "Presentación"))
-        densidad = a_decimal(g(v, "Densidad"))
+
+        # El tipo lo dice la unidad de la presentación, no una suposición: un
+        # envase de 500 g es un sólido y uno de 2.5 L un líquido. Hasta el
+        # 2026-08-07 esto estaba fijo en LIQUIDO porque la carga solo llevaba
+        # ácidos; al ampliarla entraron sosa, carbonatos y óxido de calcio, y
+        # la base lo rechazó — con razón: «un sólido no debe tener densidad en
+        # PRESENTACION».
+        tipo = "SOLIDO" if unidad in ("g", "kg") else "LIQUIDO"
+
+        # La densidad es cosa de líquidos. Si la columna del censo está vacía
+        # se recurre a la impresa en la etiqueta del fabricante, que es un dato
+        # leído, no estimado.
+        densidad = a_decimal(g(v, "Densidad")) if tipo == "LIQUIDO" else None
+        if tipo == "LIQUIDO" and densidad is None:
+            densidad = densidad_de_etiqueta(g(v, "Densidad (etiqueta)"))
+
+        # Lo que el envase declara contener, en gramos. Si el censo no lo trae,
+        # se deriva de la capacidad rotulada: 2.5 L × 1.18 g/mL = 2950 g, y un
+        # envase de 0.5 kg son 500 g. No es una estimación del contenido real
+        # —eso es bruto − tara— sino la conversión de lo que dice el envase.
         nominal = a_decimal(g(v, "Contenido nominal (g)"))
+        if nominal is None and capacidad is not None:
+            if tipo == "SOLIDO":
+                nominal = capacidad * (1000 if unidad == "kg" else 1)
+            elif densidad is not None:
+                nominal = capacidad * (1000 if unidad == "L" else 1) * densidad
+            if nominal is not None:
+                nominal = nominal.quantize(Decimal("0.0001"))
+
         sunat = limpiar(g(v, "Código SUNAT"))
 
         # ── insumo ──────────────────────────────────────────────────────────
@@ -360,7 +490,7 @@ def construir(idx, limpias):
             "id": id_insumo,
             "nombre": NOMBRE_INSUMO.get(id_insumo,
                                         limpiar(g(v, "Insumo")) or id_insumo),
-            "tipo": "LIQUIDO",
+            "tipo": tipo,
             "unidad_base": "g",
             # En estos 20 frascos la densidad no varía entre lotes de una misma
             # presentación: varía ENTRE presentaciones (marcas y concentraciones
@@ -428,11 +558,31 @@ def construir(idx, limpias):
             investigadores.add(resuelto)
 
         # ── frasco ──────────────────────────────────────────────────────────
+        #
+        # La tara la manda ALL.DATA (decisión del laboratorio, 2026-08-07).
+        # `Tara (kg)` del censo ES la de ALL.DATA —se comprobó que coinciden en
+        # las 179 filas comparables, sin una excepción— así que se toma primero.
+        # Solo si esa columna está vacía se recurre a la etiqueta fotografiada,
+        # y entonces se deja dicho de dónde salió.
+        #
+        # Ocho frascos tienen la etiqueta manuscrita discrepando de ALL.DATA
+        # (H-24). Se cargan con la de ALL.DATA, como se decidió, y siguen en la
+        # lista de pesar vacíos: una tara calculada no es una medición.
         bruto = a_decimal(g(v, "Peso bruto balanza (g)"))
         tara = a_decimal(g(v, "Tara (kg)"))
-        tara = tara * 1000 if tara is not None else a_decimal(
-            g(v, "Tara de etiqueta (g)"))
+        if tara is not None:
+            tara *= 1000
+            origen_tara = "ALL.DATA (libros CONTROL DE REACTIVOS)"
+        else:
+            tara = a_decimal(g(v, "Tara de etiqueta (g)"))
+            origen_tara = ("Etiqueta del frasco (ALL.DATA no la tiene)"
+                           if tara is not None else None)
         neto = (bruto - tara) if (bruto is not None and tara is not None) else None
+
+        # Lo que el censo declara sobre la procedencia, más lo que acabamos de
+        # resolver. Si el censo ya lo explicaba, su texto manda: es más
+        # concreto que la regla general.
+        fuente_tara = recortar(g(v, "Fuente de la tara"), 200) or origen_tara
 
         laboratorio = LABORATORIO_ROTULO.get(
             sin_acento(g(v, "Laboratorio (etiqueta)")))
@@ -447,7 +597,7 @@ def construir(idx, limpias):
             "peso_bruto_g": bruto,
             "tara_g": tara,
             "neto_g": neto,
-            "fuente_tara": recortar(g(v, "Fuente de la tara"), 200),
+            "fuente_tara": fuente_tara,
             "fecha_pesaje": a_hora(g(v, "Fecha de pesado")),
             "condicion_envase": recortar(g(v, "Estado físico"), 20),
             "volumen_ml": (neto / densidad).quantize(Decimal("0.0001"))
@@ -457,6 +607,16 @@ def construir(idx, limpias):
             "accion": limpiar(g(v, "Acción")),
         })
 
+    # Laboratorio de cada custodio deducido de SUS PROPIOS frascos, y solo si
+    # todos coinciden. Dos laboratorios distintos no se promedian: se deja sin
+    # deducir y decide la regla de más abajo.
+    lab_custodio: dict[str, str] = {}
+    for nombre, _ in investigadores:
+        suyos = {f["laboratorio"] for f in frascos
+                 if f["custodio"] == nombre and f["laboratorio"]}
+        if len(suyos) == 1:
+            lab_custodio[nombre] = suyos.pop()
+
     return {
         "insumos": list(insumos.values()),
         "presentaciones": list(presentaciones.values()),
@@ -464,6 +624,7 @@ def construir(idx, limpias):
         "lotes": list(lotes.values()),
         "ubicaciones": list(ubicaciones.values()),
         "investigadores": sorted(investigadores),
+        "lab_custodio": lab_custodio,
         "frascos": frascos,
     }
 
@@ -482,7 +643,11 @@ def emitir(datos, descartadas, reusar: bool = False) -> str:
     w(f"-- {len(datos['frascos'])} frascos cargados · "
       f"{len(descartadas)} descartados por el pre-flight")
     w("--")
-    w("-- Los descartados NO son campos vacíos: son contradicciones internas.")
+    w("-- Un campo vacío YA NO descarta: el frasco entra con el hueco marcado")
+    w("-- (sin código SUNAT, sin densidad, sin fecha) y la aplicación lo enseña")
+    w("-- como alerta. Lo que queda fuera es lo que no se puede IDENTIFICAR ni")
+    w("-- PESAR, o lo que exige una decisión del laboratorio. Se resuelve")
+    w("-- volviendo a la foto o rotulando el frasco, no eligiendo un número.")
     w("-- Se resuelven volviendo a la foto, no eligiendo el número más creíble.")
     for fila, codigo, bloqueos in descartadas:
         w(f"--   fila {fila:>3}  {codigo}")
@@ -529,8 +694,21 @@ def emitir(datos, descartadas, reusar: bool = False) -> str:
 
     w("-- ─── investigadores (lista controlada · US-04) ────────────────────")
     w("-- Nombres canónicos: ver ALIAS_CUSTODIO en carga_censo_v4.py.")
+    w("--")
+    w("-- La base exige que todo investigador tenga carrera o laboratorio")
+    w("-- (ck_investigador_adscripcion). Se resuelve en este orden:")
+    w("--   1. si es un ÁREA, su laboratorio es él mismo;")
+    w("--   2. si todos sus frascos declaran el mismo laboratorio, ese;")
+    w("--   3. si no, el del almacén donde están sus frascos, MARCADO COMO")
+    w("--      PROVISIONAL: es dónde está el producto, no dónde trabaja la")
+    w("--      persona. Hay que confirmarlo con el laboratorio.")
     for nombre, tipo in datos["investigadores"]:
-        lab = LABORATORIO_DE_AREA.get(nombre)
+        lab = LABORATORIO_DE_AREA.get(nombre) or datos["lab_custodio"].get(nombre)
+        if not lab:
+            lab = LABORATORIO_DEL_ALMACEN
+            w(f"-- PROVISIONAL · {nombre}: sin laboratorio en ninguno de sus "
+              f"frascos; se le adscribe «{lab}» por ser el almacén donde están. "
+              "CONFIRMAR.")
         equivalentes = nombres_equivalentes(nombre) if reusar else [nombre]
         w("INSERT INTO investigador (nombre, tipo, id_laboratorio)")
         w(f"SELECT {sql(nombre)}, {sql(tipo)}, "
