@@ -14,6 +14,10 @@ class Settings(BaseSettings):
 
     app_name: str = "IQBF ULIMA API"
     environment: str = "development"
+    #: Intentos fallidos seguidos antes de bloquear temporalmente la cuenta.
+    max_intentos_fallidos: int = 8
+    #: Duración del bloqueo temporal, en minutos.
+    bloqueo_minutos: int = 15
     auth_mode: Literal["local"] = "local"
     database_url: str = "postgresql://127.0.0.1:5432/iqbf_mvp"
     jwt_secret: SecretStr = SecretStr(

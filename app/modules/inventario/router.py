@@ -16,7 +16,7 @@ Tres decisiones que conviene no deshacer:
    Aquí no hay ni un UPDATE sobre `frasco.peso_neto_actual_g`.
 """
 
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Query, status
@@ -393,7 +393,33 @@ def registrar_consumo(
             )
         cantidad_g = cantidad * FACTOR_A_ML[unidad] * Decimal(densidad)
 
-    cantidad_g = cantidad_g.quantize(Decimal("0.0001"))
+    # `quantize` lanza InvalidOperation si el número no cabe en el contexto
+    # decimal, y eso salía como 500 «Error de base de datos» — un mensaje falso,
+    # porque la base ni se toca. Un pegado mal hecho en la demo no puede acabar
+    # en un error de servidor.
+    try:
+        cantidad_g = cantidad_g.quantize(Decimal("0.0001"))
+    except (InvalidOperation, OverflowError) as error:
+        raise ProblemException(
+            422,
+            "VALIDACION",
+            "Cantidad fuera de rango",
+            f"La cantidad indicada no es un peso registrable en este frasco. "
+            f"El saldo actual es {frasco['peso_neto_actual_g']} g.",
+            field="cantidad",
+        ) from error
+
+    # 14 enteros y 4 decimales es el ancho de kardex.cantidad_g: por encima, la
+    # base rechazaría con un error de tipo que el operario no puede interpretar.
+    if cantidad_g >= Decimal("10") ** 10:
+        raise ProblemException(
+            422,
+            "VALIDACION",
+            "Cantidad fuera de rango",
+            "La cantidad excede el máximo registrable (10 000 000 000 g).",
+            field="cantidad",
+        )
+
     if cantidad_g <= 0:
         raise ProblemException(
             422,

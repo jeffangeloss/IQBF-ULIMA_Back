@@ -387,7 +387,20 @@ def update_user(
         if payload.laboratorios is not None
         else current.laboratorios
     )
-    if account_fields_changed:
+    # El alcance solo se revalida cuando el alcance CAMBIA. Antes bastaba con
+    # tocar `estado` para que se revalidaran los alcances ya existentes, y una
+    # cuenta cuyo laboratorio dejó de estar vigente no se podía bloquear ni
+    # desactivar: 422 ALCANCE_INVALIDO y la cuenta seguía entrando. Cortar el
+    # acceso de una cuenta no puede depender de la vigencia de su laboratorio.
+    scope_changed = any(
+        value is not None
+        for value in (
+            payload.alcance_global,
+            payload.establecimientos,
+            payload.laboratorios,
+        )
+    )
+    if scope_changed:
         _validate_scopes(
             connection,
             global_scope=final_global,
