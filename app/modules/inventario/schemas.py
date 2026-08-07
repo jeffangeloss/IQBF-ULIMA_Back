@@ -35,6 +35,9 @@ class FrascoResumen(ApiModel):
     peso_neto_actual_g: DecimalString | None
     saldo_indeterminado: bool
     fraccion_llenado: DecimalString | None
+    #: El nominal de la presentación no describe a este frasco: algún frasco
+    #: suyo llegó a contener más de lo que la presentación dice que cabe.
+    nominal_dudoso: bool
     volumen_actual_ml: DecimalString | None
     densidad_aplicable: DecimalString | None
 

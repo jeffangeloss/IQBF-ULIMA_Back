@@ -50,6 +50,7 @@ _COLUMNAS_RESUMEN = """
     v.id_frasco, v.id_insumo, v.nombre_comercial, v.id_presentacion,
     v.codigo_bf_sunat, v.concentracion, v.numero_lote,
     v.peso_neto_actual_g, v.saldo_indeterminado, v.fraccion_llenado,
+    v.nominal_dudoso,
     v.volumen_actual_ml, v.densidad_aplicable,
     v.id_investigador, v.custodio, v.id_laboratorio, v.laboratorio,
     v.ubicacion, v.posicion,
