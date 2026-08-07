@@ -38,6 +38,9 @@ class CatalogMetadata(ApiModel):
     tipo: Literal["PERSONA", "AREA"] | None = None
     email: str | None = None
     descripcion: str | None = None
+    #: Solo en establecimientos. US-027: si es `False`, las autorizaciones se
+    #: registran y se consultan pero ningún consumo se bloquea por ellas.
+    exige_autorizacion: bool | None = None
 
 
 class CatalogItem(ApiModel):

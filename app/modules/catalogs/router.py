@@ -32,7 +32,11 @@ CATALOGS: dict[str, dict[str, Any]] = {
         "state": "estado",
         "valid_from": "vigencia_desde",
         "valid_to": "vigencia_hasta",
-        "metadata": "'{}'::jsonb",
+        # Si el establecimiento exige autorización (US-027) no es un detalle
+        # interno: decide si una autorización vigente llega a bloquear algo.
+        # Sin este dato la pantalla de autorizaciones no puede decir si el
+        # control está armado, y callarlo es peor que no tenerlo.
+        "metadata": "jsonb_build_object('exige_autorizacion', exige_autorizacion)",
         "write_fields": ["codigo", "nombre", "vigencia_desde"],
     },
     "carreras": {

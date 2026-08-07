@@ -283,3 +283,43 @@ def test_us024_un_ejecutable_no_es_un_oficio(
         files={"archivo": ("malo.sh", b"#!/bin/sh\nrm -rf /", "application/x-sh")},
     )
     assert respuesta.status_code == 422
+
+
+def test_us027_el_catalogo_dice_si_el_control_esta_armado(
+    client: TestClient, admin_headers, base_e4, db_connection
+):
+    """Que el establecimiento exija autorización no es un detalle interno.
+
+    Decide si una autorización vigente llega a bloquear algo, y la pantalla de
+    autorizaciones tiene que poder decirlo. Sin este dato, una interfaz de
+    control calla que el control está apagado, que es peor que no tenerlo.
+    """
+    def exige() -> bool | None:
+        items = client.get(
+            "/api/catalogos/establecimientos", headers=admin_headers
+        ).json()
+        fila = next(
+            e for e in items
+            if int(e["id"]) == base_e4["establecimiento"]
+        )
+        return fila["metadata"]["exige_autorizacion"]
+
+    # Nace apagado: encenderlo con cero autorizaciones cargadas dejaría al
+    # laboratorio sin poder registrar nada.
+    assert exige() is False
+
+    db_connection.execute(
+        "UPDATE establecimiento SET exige_autorizacion = TRUE "
+        " WHERE id_establecimiento = %s",
+        (base_e4["establecimiento"],),
+    )
+    db_connection.connection.commit()
+    try:
+        assert exige() is True
+    finally:
+        db_connection.execute(
+            "UPDATE establecimiento SET exige_autorizacion = FALSE "
+            " WHERE id_establecimiento = %s",
+            (base_e4["establecimiento"],),
+        )
+        db_connection.connection.commit()
