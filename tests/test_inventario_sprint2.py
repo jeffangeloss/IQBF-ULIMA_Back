@@ -268,3 +268,126 @@ def test_codigo_sunat_numerico_debe_tener_seis_digitos(db_connection):
             """
         )
     assert "ck_presentacion_sunat_6" in str(fallo.value)
+
+
+def _bruto_lleno(client: TestClient, admin_headers) -> Decimal:
+    """Lo que la balanza debe marcar ahora mismo: tara + saldo.
+
+    Se consulta en vez de darlo por sabido: otras pruebas de este mismo módulo
+    ya han consumido del frasco, y es justo lo que hace la pantalla.
+    """
+    f = client.get("/api/frascos/TEST-FRASCO-CON-TARA", headers=admin_headers).json()
+    return Decimal(f["tara_g"]) + Decimal(f["peso_neto_actual_g"])
+
+
+def test_consumo_por_pesada_deriva_el_consumo_de_la_balanza(
+    client: TestClient, admin_headers, escenario
+):
+    """Como registra el laboratorio: se pesa antes y después, la resta es el consumo."""
+    lleno = _bruto_lleno(client, admin_headers)
+    respuesta = client.post(
+        "/api/movimientos/consumo-por-pesada",
+        headers=admin_headers,
+        json={
+            "id_frasco": "TEST-FRASCO-CON-TARA",
+            "bruto_antes_g": str(lleno),
+            "bruto_despues_g": str(lleno - Decimal("100")),
+            "id_investigador": escenario["alfa"],
+            "curso": "Q. General",
+            "usuario_final": "Mery Damazo (practicante)",
+        },
+    )
+    assert respuesta.status_code == 201, respuesta.text
+    cuerpo = respuesta.json()
+    assert Decimal(cuerpo["cantidad_g"]) == Decimal("100.0000")
+    # Las dos lecturas quedan guardadas: son la evidencia, no una estimación.
+    assert Decimal(cuerpo["bruto_antes_g"]) == lleno
+    assert Decimal(cuerpo["bruto_despues_g"]) == lleno - Decimal("100")
+    assert cuerpo["id_ajuste"] is None
+    assert (Decimal(cuerpo["saldo_antes_g"]) - Decimal(cuerpo["saldo_despues_g"])
+            == Decimal("100"))
+
+
+def test_pesada_que_no_cuadra_se_rechaza(
+    client: TestClient, admin_headers, escenario
+):
+    """Si la balanza no marca tara+saldo, salió producto sin registrarse.
+
+    Se rechaza en vez de dejar que esa diferencia se disuelva dentro del
+    consumo, que es exactamente lo que pasa hoy en sus libros de Excel: 25 de
+    713 pares de pesadas no encadenan y nadie se entera hasta el inventario.
+    """
+    respuesta = client.post(
+        "/api/movimientos/consumo-por-pesada",
+        headers=admin_headers,
+        json={
+            "id_frasco": "TEST-FRASCO-CON-TARA",
+            "bruto_antes_g": str(_bruto_lleno(client, admin_headers) - Decimal("200")),
+            "bruto_despues_g": "1",
+            "id_investigador": escenario["alfa"],
+        },
+    )
+    assert respuesta.status_code == 409, respuesta.text
+    assert respuesta.json()["code"] == "PESADA_NO_CUADRA"
+    assert "sin registrar" in respuesta.json()["detail"]
+
+
+def test_la_diferencia_se_regulariza_como_movimiento_propio(
+    client: TestClient, admin_headers, escenario, db_connection
+):
+    """Con `ajustar_diferencia` entran DOS movimientos, no uno inflado.
+
+    Quien audite verá el ajuste y el consumo por separado, que es lo que de
+    verdad ocurrió. Meter los 200 g perdidos dentro del consumo diría que un
+    alumno usó 300 g cuando usó 100.
+    """
+    lleno = _bruto_lleno(client, admin_headers)
+    respuesta = client.post(
+        "/api/movimientos/consumo-por-pesada",
+        headers=admin_headers,
+        json={
+            "id_frasco": "TEST-FRASCO-CON-TARA",
+            "bruto_antes_g": str(lleno - Decimal("200")),
+            "bruto_despues_g": str(lleno - Decimal("300")),
+            "id_investigador": escenario["alfa"],
+            "ajustar_diferencia": True,
+        },
+    )
+    assert respuesta.status_code == 201, respuesta.text
+    cuerpo = respuesta.json()
+    assert cuerpo["id_ajuste"] is not None
+    assert Decimal(cuerpo["ajuste_g"]) == Decimal("-200.0000")
+    # El consumo declarado es solo lo que se sirvió: 100 g, no 300.
+    assert Decimal(cuerpo["cantidad_g"]) == Decimal("100.0000")
+
+    fila = db_connection.execute(
+        "SELECT motivo, cantidad_g FROM kardex WHERE id_movimiento = %s",
+        (cuerpo["id_ajuste"],),
+    ).fetchone()
+    assert fila["motivo"] == "ajuste_inventario"
+    assert fila["cantidad_g"] == Decimal("200.0000")
+
+
+def test_inventario_confirma_el_saldo_sin_moverlo(
+    client: TestClient, admin_headers, escenario
+):
+    """Las filas «INV.» de sus libros: se pesa, se confirma, no se consume."""
+    antes = client.get("/api/frascos/TEST-FRASCO-CON-TARA", headers=admin_headers).json()
+    lleno = Decimal(antes["tara_g"]) + Decimal(antes["peso_neto_actual_g"])
+    respuesta = client.post(
+        "/api/movimientos/inventario",
+        headers=admin_headers,
+        json={
+            "id_frasco": "TEST-FRASCO-CON-TARA",
+            "bruto_antes_g": str(lleno),
+            "bruto_despues_g": str(lleno),
+            "id_investigador": escenario["alfa"],
+        },
+    )
+    assert respuesta.status_code == 201, respuesta.text
+    cuerpo = respuesta.json()
+    assert cuerpo["motivo"] == "inventario"
+    assert Decimal(cuerpo["cantidad_g"]) == Decimal("0")
+    # El saldo queda exactamente donde estaba: se confirma, no se mueve.
+    assert (Decimal(cuerpo["saldo_resultante_g"])
+            == Decimal(antes["peso_neto_actual_g"]))

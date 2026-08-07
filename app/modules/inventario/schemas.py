@@ -147,6 +147,29 @@ class ConsumoCreate(ApiModel):
     fecha_operacion: date | None = None
 
 
+class ConsumoPorPesada(ApiModel):
+    """US-05 registrado como lo hace el laboratorio: dos pesadas del frasco.
+
+    Es la forma de sus libros «CONTROL DE REACTIVOS»: el operario pone el
+    frasco en la balanza antes y despues de servir, y el consumo se DERIVA de
+    la resta. No se teclea una cantidad estimada, se mide.
+
+    `bruto_antes_g` tiene que cuadrar con `tara + saldo`. Si no cuadra, hubo
+    uso sin registrar: el servidor lo rechaza en vez de dejar que esa
+    diferencia se disuelva dentro del consumo. Con `ajustar_diferencia` se
+    regulariza primero, con su propio movimiento auditable.
+    """
+
+    id_frasco: str = Field(max_length=40)
+    bruto_antes_g: DecimalString = Field(gt=0)
+    bruto_despues_g: DecimalString = Field(ge=0)
+    id_investigador: int
+    curso: str | None = Field(default=None, max_length=120)
+    usuario_final: str | None = Field(default=None, max_length=160)
+    fecha_operacion: date | None = None
+    ajustar_diferencia: bool = False
+
+
 class ConsumoOut(ApiModel):
     id_movimiento: int
     id_frasco: str
@@ -157,6 +180,12 @@ class ConsumoOut(ApiModel):
     saldo_antes_g: DecimalString
     saldo_despues_g: DecimalString
     fecha_hora: datetime
+    bruto_antes_g: DecimalString | None = None
+    bruto_despues_g: DecimalString | None = None
+    #: Movimiento de `ajuste_inventario` creado antes del consumo, si la
+    #: pesada revelo una diferencia y se pidio regularizarla.
+    id_ajuste: int | None = None
+    ajuste_g: DecimalString | None = None
 
 
 class ResumenPanel(ApiModel):

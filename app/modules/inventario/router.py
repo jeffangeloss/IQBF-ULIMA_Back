@@ -29,6 +29,7 @@ from app.modules.auth.schemas import CurrentUser
 from app.modules.inventario.schemas import (
     ConsumoCreate,
     ConsumoOut,
+    ConsumoPorPesada,
     Declaracion,
     FrascoDetalle,
     FrascoResumen,
@@ -447,4 +448,200 @@ def registrar_consumo(
         saldo_antes_g=row["peso_antes_g"],
         saldo_despues_g=row["saldo_resultante_g"],
         fecha_hora=row["fecha_hora"],
+    )
+
+
+@router.post(
+    "/movimientos/consumo-por-pesada",
+    response_model=ConsumoOut,
+    status_code=status.HTTP_201_CREATED,
+    summary="Registrar un consumo por doble pesada (US-05, US-12, US-13)",
+)
+def registrar_consumo_por_pesada(
+    payload: ConsumoPorPesada,
+    connection: Annotated[Connection, Depends(get_connection)],
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+) -> ConsumoOut:
+    """El consumo se deriva de la balanza, no se teclea.
+
+    Es como registra el laboratorio en sus libros «CONTROL DE REACTIVOS»: se
+    pesa el frasco entero antes y después de servir. La resta es el consumo, y
+    la evidencia queda guardada — no una cifra que alguien estimó.
+
+    A cambio, el registro se puede comprobar: `bruto_antes_g` tiene que
+    coincidir con `tara + saldo`. Cuando no coincide es que salió producto sin
+    registrarse, y el trigger lo rechaza. Con `ajustar_diferencia` esa
+    diferencia entra **como un movimiento propio** de `ajuste_inventario`
+    antes del consumo, en vez de disolverse dentro de él: quien audite verá
+    los dos hechos por separado, que es lo que ocurrió.
+    """
+    frasco = connection.execute(
+        """
+        SELECT f.tara_g, f.peso_neto_actual_g, f.id_investigador
+          FROM frasco f
+         WHERE f.id_frasco = %s
+        """,
+        (payload.id_frasco,),
+    ).fetchone()
+    if frasco is None:
+        raise ProblemException(
+            404, "FRASCO_NO_EXISTE", "Frasco inexistente",
+            f"No existe el frasco '{payload.id_frasco}'.", field="id_frasco",
+        )
+    if frasco["peso_neto_actual_g"] is None:
+        raise ProblemException(
+            409, "SALDO_INDETERMINADO", "Saldo indeterminado",
+            f"El frasco '{payload.id_frasco}' no tiene tara: su saldo es "
+            "indeterminado y no se puede mover.",
+        )
+
+    bruto_antes = Decimal(payload.bruto_antes_g)
+    bruto_despues = Decimal(payload.bruto_despues_g)
+    consumo = (bruto_antes - bruto_despues).quantize(Decimal("0.0001"))
+
+    if consumo <= 0:
+        raise ProblemException(
+            422, "VALIDACION", "La segunda pesada no es menor",
+            f"La balanza marca {bruto_despues} g después y {bruto_antes} g "
+            "antes: no hubo consumo. Si el frasco solo se verificó, use un "
+            "movimiento de inventario.",
+            field="bruto_despues_g",
+        )
+
+    tara = frasco["tara_g"]
+    saldo = frasco["peso_neto_actual_g"]
+    id_ajuste: int | None = None
+    ajuste_g: Decimal | None = None
+
+    # La diferencia entre lo que marca la balanza y lo que el sistema cree que
+    # hay es producto que salió sin registrarse. No se absorbe en el consumo.
+    if tara is not None:
+        descuadre = (bruto_antes - (tara + saldo)).quantize(Decimal("0.0001"))
+        if abs(descuadre) > Decimal("0.05"):
+            if not payload.ajustar_diferencia:
+                raise ProblemException(
+                    409, "PESADA_NO_CUADRA", "La pesada no cuadra",
+                    f"La balanza marca {bruto_antes} g y debería marcar "
+                    f"{tara + saldo} g (tara {tara} + saldo {saldo}). "
+                    f"Diferencia de {descuadre} g: hubo uso sin registrar. "
+                    "Confirme el ajuste para regularizarlo antes del consumo.",
+                    field="bruto_antes_g",
+                )
+            fila_ajuste = connection.execute(
+                """
+                INSERT INTO kardex (
+                  id_frasco, tipo_movimiento, motivo, cantidad_g,
+                  id_investigador_origen, fecha_operacion, curso,
+                  registrado_por, saldo_resultante_g
+                ) VALUES (
+                  %s, %s, 'ajuste_inventario', %s,
+                  %s, COALESCE(%s, CURRENT_DATE), %s,
+                  %s, 0
+                )
+                RETURNING id_movimiento, cantidad_g
+                """,
+                (
+                    payload.id_frasco,
+                    "ENTRADA" if descuadre > 0 else "SALIDA",
+                    abs(descuadre),
+                    payload.id_investigador,
+                    payload.fecha_operacion,
+                    "Regularización: diferencia detectada al pesar",
+                    user.id_usuario,
+                ),
+            ).fetchone()
+            id_ajuste = fila_ajuste["id_movimiento"]
+            ajuste_g = descuadre
+
+    fila = connection.execute(
+        """
+        INSERT INTO kardex (
+          id_frasco, tipo_movimiento, motivo, cantidad_g,
+          cantidad_registrada, unidad_registrada,
+          bruto_antes_g, bruto_despues_g,
+          id_investigador_origen, fecha_operacion, curso, usuario_final,
+          registrado_por, saldo_resultante_g
+        ) VALUES (
+          %s, 'SALIDA', 'consumo_laboratorio', %s,
+          %s, 'g',
+          %s, %s,
+          %s, COALESCE(%s, CURRENT_DATE), %s, %s,
+          %s, 0
+        )
+        RETURNING id_movimiento, id_frasco, cantidad_g, cantidad_kg,
+                  unidad_registrada, densidad_aplicada, peso_antes_g,
+                  saldo_resultante_g, fecha_hora, bruto_antes_g, bruto_despues_g
+        """,
+        (
+            payload.id_frasco, consumo, consumo,
+            bruto_antes, bruto_despues,
+            payload.id_investigador, payload.fecha_operacion,
+            payload.curso, payload.usuario_final, user.id_usuario,
+        ),
+    ).fetchone()
+
+    return ConsumoOut(
+        id_movimiento=fila["id_movimiento"],
+        id_frasco=fila["id_frasco"],
+        cantidad_g=fila["cantidad_g"],
+        cantidad_kg=fila["cantidad_kg"],
+        unidad_registrada=fila["unidad_registrada"],
+        densidad_aplicada=fila["densidad_aplicada"],
+        saldo_antes_g=fila["peso_antes_g"],
+        saldo_despues_g=fila["saldo_resultante_g"],
+        fecha_hora=fila["fecha_hora"],
+        bruto_antes_g=fila["bruto_antes_g"],
+        bruto_despues_g=fila["bruto_despues_g"],
+        id_ajuste=id_ajuste,
+        ajuste_g=ajuste_g,
+    )
+
+
+@router.post(
+    "/movimientos/inventario",
+    response_model=MovimientoOut,
+    status_code=status.HTTP_201_CREATED,
+    summary="Registrar una pesada de verificación sin mover saldo",
+)
+def registrar_inventario(
+    payload: ConsumoPorPesada,
+    connection: Annotated[Connection, Depends(get_connection)],
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+) -> MovimientoOut:
+    """Las filas «INV.» de sus libros: se pesa y se confirma, no se consume.
+
+    Deja constancia de que alguien miró el frasco ese día. Si la pesada no
+    cuadra, el trigger la rechaza: entonces lo que corresponde es un ajuste,
+    no una verificación.
+    """
+    fila = connection.execute(
+        """
+        INSERT INTO kardex (
+          id_frasco, tipo_movimiento, motivo, cantidad_g,
+          bruto_antes_g, bruto_despues_g,
+          id_investigador_origen, fecha_operacion, curso,
+          registrado_por, saldo_resultante_g
+        ) VALUES (
+          %s, 'AJUSTE', 'inventario', 0,
+          %s, %s,
+          %s, COALESCE(%s, CURRENT_DATE), %s,
+          %s, 0
+        )
+        RETURNING id_movimiento, tipo_movimiento, motivo, cantidad_g,
+                  cantidad_registrada, unidad_registrada, densidad_aplicada,
+                  saldo_resultante_g, peso_antes_g, fecha_hora, fecha_operacion,
+                  curso
+        """,
+        (
+            payload.id_frasco,
+            payload.bruto_antes_g, payload.bruto_antes_g,
+            payload.id_investigador, payload.fecha_operacion,
+            payload.curso or "Verificación de inventario",
+            user.id_usuario,
+        ),
+    ).fetchone()
+    return MovimientoOut(
+        **fila,
+        registrado_por=user.nombre,
+        investigador=None,
     )
