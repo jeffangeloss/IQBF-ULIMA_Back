@@ -4546,6 +4546,364 @@
         ]
       }
     },
+    "/api/movimientos/consumo-por-pesada": {
+      "post": {
+        "tags": [
+          "Inventario y consumo"
+        ],
+        "summary": "Registrar un consumo por doble pesada (US-05, US-12, US-13)",
+        "description": "El consumo se deriva de la balanza, no se teclea.\n\nEs como registra el laboratorio en sus libros «CONTROL DE REACTIVOS»: se\npesa el frasco entero antes y después de servir. La resta es el consumo, y\nla evidencia queda guardada — no una cifra que alguien estimó.\n\nA cambio, el registro se puede comprobar: `bruto_antes_g` tiene que\ncoincidir con `tara + saldo`. Cuando no coincide es que salió producto sin\nregistrarse, y el trigger lo rechaza. Con `ajustar_diferencia` esa\ndiferencia entra **como un movimiento propio** de `ajuste_inventario`\nantes del consumo, en vez de disolverse dentro de él: quien audite verá\nlos dos hechos por separado, que es lo que ocurrió.",
+        "operationId": "registrar_consumo_por_pesada_api_movimientos_consumo_por_pesada_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConsumoPorPesada"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsumoOut"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Solicitud inválida",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Autenticación requerida o inválida",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permiso denegado",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recurso inexistente",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicto con el estado actual",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validación o regla de negocio",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/movimientos/inventario": {
+      "post": {
+        "tags": [
+          "Inventario y consumo"
+        ],
+        "summary": "Registrar una pesada de verificación sin mover saldo",
+        "description": "Las filas «INV.» de sus libros: se pesa y se confirma, no se consume.\n\nDeja constancia de que alguien miró el frasco ese día. Si la pesada no\ncuadra, el trigger la rechaza: entonces lo que corresponde es un ajuste,\nno una verificación.",
+        "operationId": "registrar_inventario_api_movimientos_inventario_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConsumoPorPesada"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MovimientoOut"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Solicitud inválida",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Autenticación requerida o inválida",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permiso denegado",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recurso inexistente",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicto con el estado actual",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validación o regla de negocio",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/catalogos/{catalogo}": {
       "get": {
         "tags": [
@@ -6027,6 +6385,56 @@
             "type": "string",
             "format": "date-time",
             "title": "Fecha Hora"
+          },
+          "bruto_antes_g": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?\\d+(\\.\\d+)?$",
+                "example": "1250.0000"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bruto Antes G"
+          },
+          "bruto_despues_g": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?\\d+(\\.\\d+)?$",
+                "example": "1250.0000"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bruto Despues G"
+          },
+          "id_ajuste": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id Ajuste"
+          },
+          "ajuste_g": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?\\d+(\\.\\d+)?$",
+                "example": "1250.0000"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ajuste G"
           }
         },
         "type": "object",
@@ -6042,6 +6450,81 @@
           "fecha_hora"
         ],
         "title": "ConsumoOut"
+      },
+      "ConsumoPorPesada": {
+        "properties": {
+          "id_frasco": {
+            "type": "string",
+            "maxLength": 40,
+            "title": "Id Frasco"
+          },
+          "bruto_antes_g": {
+            "type": "string",
+            "pattern": "^-?\\d+(\\.\\d+)?$",
+            "title": "Bruto Antes G",
+            "example": "1250.0000"
+          },
+          "bruto_despues_g": {
+            "type": "string",
+            "pattern": "^-?\\d+(\\.\\d+)?$",
+            "title": "Bruto Despues G",
+            "example": "1250.0000"
+          },
+          "id_investigador": {
+            "type": "integer",
+            "title": "Id Investigador"
+          },
+          "curso": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Curso"
+          },
+          "usuario_final": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 160
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usuario Final"
+          },
+          "fecha_operacion": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fecha Operacion"
+          },
+          "ajustar_diferencia": {
+            "type": "boolean",
+            "title": "Ajustar Diferencia",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "id_frasco",
+          "bruto_antes_g",
+          "bruto_despues_g",
+          "id_investigador"
+        ],
+        "title": "ConsumoPorPesada",
+        "description": "US-05 registrado como lo hace el laboratorio: dos pesadas del frasco.\n\nEs la forma de sus libros «CONTROL DE REACTIVOS»: el operario pone el\nfrasco en la balanza antes y despues de servir, y el consumo se DERIVA de\nla resta. No se teclea una cantidad estimada, se mide.\n\n`bruto_antes_g` tiene que cuadrar con `tara + saldo`. Si no cuadra, hubo\nuso sin registrar: el servidor lo rechaza en vez de dejar que esa\ndiferencia se disuelva dentro del consumo. Con `ajustar_diferencia` se\nregulariza primero, con su propio movimiento auditable."
       },
       "CurrentUser": {
         "properties": {
@@ -8131,6 +8614,7 @@
               "INSUMO_INACTIVO",
               "SALDO_INDETERMINADO",
               "CUSTODIA_AJENA",
+              "PESADA_NO_CUADRA",
               "FRASCO_NO_EXISTE",
               "INVESTIGADOR_NO_EXISTE"
             ],
