@@ -3185,6 +3185,1367 @@
         }
       }
     },
+    "/api/frascos": {
+      "get": {
+        "tags": [
+          "Inventario y consumo"
+        ],
+        "summary": "Buscar frascos por nombre, código, laboratorio o custodio",
+        "description": "Responde la pregunta que llega de viva voz al laboratorio.\n\n«Dame el etanol del laboratorio de alimentos» es\n`?q=etanol&laboratorio=<id>`: `q` viaja por los alias del insumo, así que\nencuentra también los frascos rotulados «Ethanol» o «Alcohol etílico».",
+        "operationId": "list_frascos_api_frascos_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 120
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "name": "laboratorio",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Laboratorio"
+            }
+          },
+          {
+            "name": "custodio",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Custodio"
+            }
+          },
+          {
+            "name": "insumo",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 20
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Insumo"
+            }
+          },
+          {
+            "name": "estado_caducidad",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "VIGENTE",
+                    "POR_VENCER",
+                    "VENCIDO",
+                    "POR_CONFIRMAR"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Estado Caducidad"
+            }
+          },
+          {
+            "name": "solo_con_saldo",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Solo Con Saldo"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Page Size"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_FrascoResumen_"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Solicitud inválida",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Autenticación requerida o inválida",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permiso denegado",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recurso inexistente",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicto con el estado actual",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validación o regla de negocio",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/frascos/{id_frasco}": {
+      "get": {
+        "tags": [
+          "Inventario y consumo"
+        ],
+        "summary": "Ficha de un frasco con su historial",
+        "operationId": "get_frasco_api_frascos__id_frasco__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id_frasco",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Id Frasco"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FrascoDetalle"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Solicitud inválida",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Autenticación requerida o inválida",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permiso denegado",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recurso inexistente",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicto con el estado actual",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validación o regla de negocio",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/inventario/panel": {
+      "get": {
+        "tags": [
+          "Inventario y consumo"
+        ],
+        "summary": "Cifras de cabecera del inventario",
+        "operationId": "panel_api_inventario_panel_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResumenPanel"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Solicitud inválida",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Autenticación requerida o inválida",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permiso denegado",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recurso inexistente",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicto con el estado actual",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validación o regla de negocio",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/inventario/saldo-investigador": {
+      "get": {
+        "tags": [
+          "Inventario y consumo"
+        ],
+        "summary": "Saldo por custodio (US-09)",
+        "operationId": "saldo_por_investigador_api_inventario_saldo_investigador_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "con_frascos",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Con Frascos"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SaldoInvestigador"
+                  },
+                  "title": "Response Saldo Por Investigador Api Inventario Saldo Investigador Get"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Solicitud inválida",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Autenticación requerida o inválida",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permiso denegado",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recurso inexistente",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicto con el estado actual",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validación o regla de negocio",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/inventario/saldo-laboratorio": {
+      "get": {
+        "tags": [
+          "Inventario y consumo"
+        ],
+        "summary": "Stock por laboratorio e insumo (US-11)",
+        "operationId": "saldo_por_laboratorio_api_inventario_saldo_laboratorio_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "laboratorio",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Laboratorio"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "title": "Response Saldo Por Laboratorio Api Inventario Saldo Laboratorio Get"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Solicitud inválida",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Autenticación requerida o inválida",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permiso denegado",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recurso inexistente",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicto con el estado actual",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validación o regla de negocio",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/declaracion/sunat": {
+      "get": {
+        "tags": [
+          "Inventario y consumo"
+        ],
+        "summary": "Rollup por código de presentación SUNAT (US-21)",
+        "operationId": "declaracion_sunat_api_declaracion_sunat_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Declaracion"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Solicitud inválida",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Autenticación requerida o inválida",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permiso denegado",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recurso inexistente",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicto con el estado actual",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validación o regla de negocio",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/movimientos/consumo": {
+      "post": {
+        "tags": [
+          "Inventario y consumo"
+        ],
+        "summary": "Registrar un consumo (US-05, US-12, US-13, US-20)",
+        "description": "Descuenta del frasco y deja el rastro.\n\nLa conversión a gramos se hace aquí y **se congela** en el movimiento junto\ncon la densidad usada: si mañana se corrige la densidad del lote, este\nconsumo seguirá diciendo con qué número se calculó (US-20).",
+        "operationId": "registrar_consumo_api_movimientos_consumo_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConsumoCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsumoOut"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Solicitud inválida",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Autenticación requerida o inválida",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permiso denegado",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recurso inexistente",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicto con el estado actual",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validación o regla de negocio",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlación de la solicitud",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/catalogos/{catalogo}": {
       "get": {
         "tags": [
@@ -4537,6 +5898,151 @@
         "type": "object",
         "title": "CatalogUpdate"
       },
+      "ConsumoCreate": {
+        "properties": {
+          "id_frasco": {
+            "type": "string",
+            "maxLength": 40,
+            "title": "Id Frasco"
+          },
+          "cantidad": {
+            "type": "string",
+            "pattern": "^-?\\d+(\\.\\d+)?$",
+            "title": "Cantidad",
+            "example": "1250.0000"
+          },
+          "unidad": {
+            "type": "string",
+            "enum": [
+              "g",
+              "kg",
+              "mL",
+              "L"
+            ],
+            "title": "Unidad"
+          },
+          "id_investigador": {
+            "type": "integer",
+            "title": "Id Investigador"
+          },
+          "curso": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Curso"
+          },
+          "usuario_final": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 160
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usuario Final"
+          },
+          "fecha_operacion": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fecha Operacion"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id_frasco",
+          "cantidad",
+          "unidad",
+          "id_investigador"
+        ],
+        "title": "ConsumoCreate",
+        "description": "US-05 — el registro que tiene que caber en segundos.\n\n`cantidad` va en la unidad en que el operario la midió. El backend congela\nen el movimiento la unidad y la densidad aplicada para que una corrección\nposterior de la densidad no reinterprete el histórico (US-20)."
+      },
+      "ConsumoOut": {
+        "properties": {
+          "id_movimiento": {
+            "type": "integer",
+            "title": "Id Movimiento"
+          },
+          "id_frasco": {
+            "type": "string",
+            "title": "Id Frasco"
+          },
+          "cantidad_g": {
+            "type": "string",
+            "pattern": "^-?\\d+(\\.\\d+)?$",
+            "title": "Cantidad G",
+            "example": "1250.0000"
+          },
+          "cantidad_kg": {
+            "type": "string",
+            "pattern": "^-?\\d+(\\.\\d+)?$",
+            "title": "Cantidad Kg",
+            "example": "1250.0000"
+          },
+          "unidad_registrada": {
+            "type": "string",
+            "title": "Unidad Registrada"
+          },
+          "densidad_aplicada": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?\\d+(\\.\\d+)?$",
+                "example": "1250.0000"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Densidad Aplicada"
+          },
+          "saldo_antes_g": {
+            "type": "string",
+            "pattern": "^-?\\d+(\\.\\d+)?$",
+            "title": "Saldo Antes G",
+            "example": "1250.0000"
+          },
+          "saldo_despues_g": {
+            "type": "string",
+            "pattern": "^-?\\d+(\\.\\d+)?$",
+            "title": "Saldo Despues G",
+            "example": "1250.0000"
+          },
+          "fecha_hora": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Fecha Hora"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id_movimiento",
+          "id_frasco",
+          "cantidad_g",
+          "cantidad_kg",
+          "unidad_registrada",
+          "densidad_aplicada",
+          "saldo_antes_g",
+          "saldo_despues_g",
+          "fecha_hora"
+        ],
+        "title": "ConsumoOut"
+      },
       "CurrentUser": {
         "properties": {
           "id_usuario": {
@@ -4608,6 +6114,50 @@
           "session_id"
         ],
         "title": "CurrentUser"
+      },
+      "Declaracion": {
+        "properties": {
+          "lineas": {
+            "items": {
+              "$ref": "#/components/schemas/LineaDeclaracion"
+            },
+            "type": "array",
+            "title": "Lineas"
+          },
+          "total_kg": {
+            "type": "string",
+            "pattern": "^-?\\d+(\\.\\d+)?$",
+            "title": "Total Kg",
+            "example": "1250.0000"
+          },
+          "frascos": {
+            "type": "integer",
+            "title": "Frascos"
+          },
+          "frascos_indeterminados": {
+            "type": "integer",
+            "title": "Frascos Indeterminados"
+          },
+          "advertencia": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Advertencia"
+          }
+        },
+        "type": "object",
+        "required": [
+          "lineas",
+          "total_kg",
+          "frascos",
+          "frascos_indeterminados"
+        ],
+        "title": "Declaracion"
       },
       "DensidadCreate": {
         "properties": {
@@ -4726,6 +6276,746 @@
           "creado_en"
         ],
         "title": "DensidadOut"
+      },
+      "FrascoDetalle": {
+        "properties": {
+          "id_frasco": {
+            "type": "string",
+            "title": "Id Frasco"
+          },
+          "id_insumo": {
+            "type": "string",
+            "title": "Id Insumo"
+          },
+          "nombre_comercial": {
+            "type": "string",
+            "title": "Nombre Comercial"
+          },
+          "id_presentacion": {
+            "type": "string",
+            "title": "Id Presentacion"
+          },
+          "codigo_bf_sunat": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Codigo Bf Sunat"
+          },
+          "concentracion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Concentracion"
+          },
+          "numero_lote": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Numero Lote"
+          },
+          "peso_neto_actual_g": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?\\d+(\\.\\d+)?$",
+                "example": "1250.0000"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peso Neto Actual G"
+          },
+          "saldo_indeterminado": {
+            "type": "boolean",
+            "title": "Saldo Indeterminado"
+          },
+          "fraccion_llenado": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?\\d+(\\.\\d+)?$",
+                "example": "1250.0000"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fraccion Llenado"
+          },
+          "volumen_actual_ml": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?\\d+(\\.\\d+)?$",
+                "example": "1250.0000"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volumen Actual Ml"
+          },
+          "densidad_aplicable": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?\\d+(\\.\\d+)?$",
+                "example": "1250.0000"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Densidad Aplicable"
+          },
+          "id_investigador": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id Investigador"
+          },
+          "custodio": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Custodio"
+          },
+          "id_laboratorio": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id Laboratorio"
+          },
+          "laboratorio": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Laboratorio"
+          },
+          "ubicacion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ubicacion"
+          },
+          "posicion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Posicion"
+          },
+          "condicion_envase": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "Sellado",
+                  "Abierto",
+                  "A la mitad",
+                  "Agotado",
+                  "Dañado",
+                  "Residuo"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Condicion Envase"
+          },
+          "estado_frasco": {
+            "type": "string",
+            "enum": [
+              "EN_USO",
+              "AGOTADO",
+              "DADO_DE_BAJA"
+            ],
+            "title": "Estado Frasco"
+          },
+          "fecha_caducidad": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fecha Caducidad"
+          },
+          "estado_caducidad": {
+            "type": "string",
+            "enum": [
+              "VIGENTE",
+              "POR_VENCER",
+              "VENCIDO",
+              "POR_CONFIRMAR"
+            ],
+            "title": "Estado Caducidad"
+          },
+          "dias_sin_movimiento": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dias Sin Movimiento"
+          },
+          "alerta_prioritaria": {
+            "type": "string",
+            "title": "Alerta Prioritaria"
+          },
+          "tipo": {
+            "type": "string",
+            "title": "Tipo"
+          },
+          "capacidad": {
+            "type": "string",
+            "pattern": "^-?\\d+(\\.\\d+)?$",
+            "title": "Capacidad",
+            "example": "1250.0000"
+          },
+          "unidad": {
+            "type": "string",
+            "title": "Unidad"
+          },
+          "tipo_envase": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tipo Envase"
+          },
+          "contenido_nominal_g": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?\\d+(\\.\\d+)?$",
+                "example": "1250.0000"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contenido Nominal G"
+          },
+          "grado_pureza": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grado Pureza"
+          },
+          "fecha_ingreso": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fecha Ingreso"
+          },
+          "peso_bruto_g": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?\\d+(\\.\\d+)?$",
+                "example": "1250.0000"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peso Bruto G"
+          },
+          "tara_g": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?\\d+(\\.\\d+)?$",
+                "example": "1250.0000"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tara G"
+          },
+          "peso_neto_inicial_g": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?\\d+(\\.\\d+)?$",
+                "example": "1250.0000"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peso Neto Inicial G"
+          },
+          "fuente_tara": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fuente Tara"
+          },
+          "fecha_pesaje": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fecha Pesaje"
+          },
+          "casillero": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Casillero"
+          },
+          "nombre_puerta": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nombre Puerta"
+          },
+          "nivel": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nivel"
+          },
+          "precision_ubicacion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Precision Ubicacion"
+          },
+          "observaciones": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observaciones"
+          },
+          "movimientos": {
+            "items": {
+              "$ref": "#/components/schemas/MovimientoOut"
+            },
+            "type": "array",
+            "title": "Movimientos"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id_frasco",
+          "id_insumo",
+          "nombre_comercial",
+          "id_presentacion",
+          "codigo_bf_sunat",
+          "concentracion",
+          "numero_lote",
+          "peso_neto_actual_g",
+          "saldo_indeterminado",
+          "fraccion_llenado",
+          "volumen_actual_ml",
+          "densidad_aplicable",
+          "id_investigador",
+          "custodio",
+          "id_laboratorio",
+          "laboratorio",
+          "ubicacion",
+          "posicion",
+          "condicion_envase",
+          "estado_frasco",
+          "fecha_caducidad",
+          "estado_caducidad",
+          "dias_sin_movimiento",
+          "alerta_prioritaria",
+          "tipo",
+          "capacidad",
+          "unidad",
+          "tipo_envase",
+          "contenido_nominal_g",
+          "grado_pureza",
+          "fecha_ingreso",
+          "peso_bruto_g",
+          "tara_g",
+          "peso_neto_inicial_g",
+          "fuente_tara",
+          "fecha_pesaje",
+          "casillero",
+          "nombre_puerta",
+          "nivel",
+          "precision_ubicacion",
+          "observaciones"
+        ],
+        "title": "FrascoDetalle",
+        "description": "La ficha completa, con el linaje del peso y su historial."
+      },
+      "FrascoResumen": {
+        "properties": {
+          "id_frasco": {
+            "type": "string",
+            "title": "Id Frasco"
+          },
+          "id_insumo": {
+            "type": "string",
+            "title": "Id Insumo"
+          },
+          "nombre_comercial": {
+            "type": "string",
+            "title": "Nombre Comercial"
+          },
+          "id_presentacion": {
+            "type": "string",
+            "title": "Id Presentacion"
+          },
+          "codigo_bf_sunat": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Codigo Bf Sunat"
+          },
+          "concentracion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Concentracion"
+          },
+          "numero_lote": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Numero Lote"
+          },
+          "peso_neto_actual_g": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?\\d+(\\.\\d+)?$",
+                "example": "1250.0000"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peso Neto Actual G"
+          },
+          "saldo_indeterminado": {
+            "type": "boolean",
+            "title": "Saldo Indeterminado"
+          },
+          "fraccion_llenado": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?\\d+(\\.\\d+)?$",
+                "example": "1250.0000"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fraccion Llenado"
+          },
+          "volumen_actual_ml": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?\\d+(\\.\\d+)?$",
+                "example": "1250.0000"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volumen Actual Ml"
+          },
+          "densidad_aplicable": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?\\d+(\\.\\d+)?$",
+                "example": "1250.0000"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Densidad Aplicable"
+          },
+          "id_investigador": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id Investigador"
+          },
+          "custodio": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Custodio"
+          },
+          "id_laboratorio": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id Laboratorio"
+          },
+          "laboratorio": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Laboratorio"
+          },
+          "ubicacion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ubicacion"
+          },
+          "posicion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Posicion"
+          },
+          "condicion_envase": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "Sellado",
+                  "Abierto",
+                  "A la mitad",
+                  "Agotado",
+                  "Dañado",
+                  "Residuo"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Condicion Envase"
+          },
+          "estado_frasco": {
+            "type": "string",
+            "enum": [
+              "EN_USO",
+              "AGOTADO",
+              "DADO_DE_BAJA"
+            ],
+            "title": "Estado Frasco"
+          },
+          "fecha_caducidad": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fecha Caducidad"
+          },
+          "estado_caducidad": {
+            "type": "string",
+            "enum": [
+              "VIGENTE",
+              "POR_VENCER",
+              "VENCIDO",
+              "POR_CONFIRMAR"
+            ],
+            "title": "Estado Caducidad"
+          },
+          "dias_sin_movimiento": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dias Sin Movimiento"
+          },
+          "alerta_prioritaria": {
+            "type": "string",
+            "title": "Alerta Prioritaria"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id_frasco",
+          "id_insumo",
+          "nombre_comercial",
+          "id_presentacion",
+          "codigo_bf_sunat",
+          "concentracion",
+          "numero_lote",
+          "peso_neto_actual_g",
+          "saldo_indeterminado",
+          "fraccion_llenado",
+          "volumen_actual_ml",
+          "densidad_aplicable",
+          "id_investigador",
+          "custodio",
+          "id_laboratorio",
+          "laboratorio",
+          "ubicacion",
+          "posicion",
+          "condicion_envase",
+          "estado_frasco",
+          "fecha_caducidad",
+          "estado_caducidad",
+          "dias_sin_movimiento",
+          "alerta_prioritaria"
+        ],
+        "title": "FrascoResumen",
+        "description": "Una fila de la lista de inventario."
       },
       "Health": {
         "properties": {
@@ -4944,6 +7234,73 @@
         "type": "object",
         "title": "InsumoUpdate"
       },
+      "LineaDeclaracion": {
+        "properties": {
+          "codigo_bf_sunat": {
+            "type": "string",
+            "title": "Codigo Bf Sunat"
+          },
+          "id_insumo": {
+            "type": "string",
+            "title": "Id Insumo"
+          },
+          "nombre_comercial": {
+            "type": "string",
+            "title": "Nombre Comercial"
+          },
+          "tipo": {
+            "type": "string",
+            "title": "Tipo"
+          },
+          "frascos": {
+            "type": "integer",
+            "title": "Frascos"
+          },
+          "frascos_indeterminados": {
+            "type": "integer",
+            "title": "Frascos Indeterminados"
+          },
+          "saldo_kg": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?\\d+(\\.\\d+)?$",
+                "example": "1250.0000"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Saldo Kg"
+          },
+          "saldo_vencido_kg": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?\\d+(\\.\\d+)?$",
+                "example": "1250.0000"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Saldo Vencido Kg"
+          }
+        },
+        "type": "object",
+        "required": [
+          "codigo_bf_sunat",
+          "id_insumo",
+          "nombre_comercial",
+          "tipo",
+          "frascos",
+          "frascos_indeterminados",
+          "saldo_kg",
+          "saldo_vencido_kg"
+        ],
+        "title": "LineaDeclaracion",
+        "description": "US-21 — una línea del reporte agregado por código SUNAT."
+      },
       "LoginRequest": {
         "properties": {
           "email": {
@@ -4964,6 +7321,176 @@
           "password"
         ],
         "title": "LoginRequest"
+      },
+      "MovimientoOut": {
+        "properties": {
+          "id_movimiento": {
+            "type": "integer",
+            "title": "Id Movimiento"
+          },
+          "tipo_movimiento": {
+            "type": "string",
+            "title": "Tipo Movimiento"
+          },
+          "motivo": {
+            "type": "string",
+            "title": "Motivo"
+          },
+          "cantidad_g": {
+            "type": "string",
+            "pattern": "^-?\\d+(\\.\\d+)?$",
+            "title": "Cantidad G",
+            "example": "1250.0000"
+          },
+          "cantidad_registrada": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?\\d+(\\.\\d+)?$",
+                "example": "1250.0000"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cantidad Registrada"
+          },
+          "unidad_registrada": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unidad Registrada"
+          },
+          "densidad_aplicada": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?\\d+(\\.\\d+)?$",
+                "example": "1250.0000"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Densidad Aplicada"
+          },
+          "saldo_resultante_g": {
+            "type": "string",
+            "pattern": "^-?\\d+(\\.\\d+)?$",
+            "title": "Saldo Resultante G",
+            "example": "1250.0000"
+          },
+          "peso_antes_g": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?\\d+(\\.\\d+)?$",
+                "example": "1250.0000"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peso Antes G"
+          },
+          "fecha_hora": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Fecha Hora"
+          },
+          "fecha_operacion": {
+            "type": "string",
+            "format": "date",
+            "title": "Fecha Operacion"
+          },
+          "registrado_por": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Registrado Por"
+          },
+          "investigador": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Investigador"
+          },
+          "curso": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Curso"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id_movimiento",
+          "tipo_movimiento",
+          "motivo",
+          "cantidad_g",
+          "cantidad_registrada",
+          "unidad_registrada",
+          "densidad_aplicada",
+          "saldo_resultante_g",
+          "peso_antes_g",
+          "fecha_hora",
+          "fecha_operacion",
+          "registrado_por",
+          "investigador",
+          "curso"
+        ],
+        "title": "MovimientoOut"
+      },
+      "Page_FrascoResumen_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/FrascoResumen"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "title": "Page[FrascoResumen]"
       },
       "Page_InsumoOut_": {
         "properties": {
@@ -5601,7 +8128,11 @@
               "ALCANCE_GLOBAL_REQUERIDO",
               "MOTIVO_REQUERIDO",
               "DENSIDAD_LOTE_REQUERIDA",
-              "INSUMO_INACTIVO"
+              "INSUMO_INACTIVO",
+              "SALDO_INDETERMINADO",
+              "CUSTODIA_AJENA",
+              "FRASCO_NO_EXISTE",
+              "INVESTIGADOR_NO_EXISTE"
             ],
             "title": "Code"
           },
@@ -5669,6 +8200,103 @@
           "type"
         ],
         "title": "ProblemFieldError"
+      },
+      "ResumenPanel": {
+        "properties": {
+          "frascos": {
+            "type": "integer",
+            "title": "Frascos"
+          },
+          "frascos_con_saldo": {
+            "type": "integer",
+            "title": "Frascos Con Saldo"
+          },
+          "saldo_total_kg": {
+            "type": "string",
+            "pattern": "^-?\\d+(\\.\\d+)?$",
+            "title": "Saldo Total Kg",
+            "example": "1250.0000"
+          },
+          "frascos_vencidos": {
+            "type": "integer",
+            "title": "Frascos Vencidos"
+          },
+          "frascos_por_vencer": {
+            "type": "integer",
+            "title": "Frascos Por Vencer"
+          },
+          "frascos_indeterminados": {
+            "type": "integer",
+            "title": "Frascos Indeterminados"
+          },
+          "frascos_dormidos": {
+            "type": "integer",
+            "title": "Frascos Dormidos"
+          },
+          "investigadores": {
+            "type": "integer",
+            "title": "Investigadores"
+          },
+          "codigos_sunat": {
+            "type": "integer",
+            "title": "Codigos Sunat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "frascos",
+          "frascos_con_saldo",
+          "saldo_total_kg",
+          "frascos_vencidos",
+          "frascos_por_vencer",
+          "frascos_indeterminados",
+          "frascos_dormidos",
+          "investigadores",
+          "codigos_sunat"
+        ],
+        "title": "ResumenPanel",
+        "description": "Las cifras de cabecera del tablero."
+      },
+      "SaldoInvestigador": {
+        "properties": {
+          "id_investigador": {
+            "type": "integer",
+            "title": "Id Investigador"
+          },
+          "custodio": {
+            "type": "string",
+            "title": "Custodio"
+          },
+          "frascos": {
+            "type": "integer",
+            "title": "Frascos"
+          },
+          "frascos_vencidos": {
+            "type": "integer",
+            "title": "Frascos Vencidos"
+          },
+          "frascos_indeterminados": {
+            "type": "integer",
+            "title": "Frascos Indeterminados"
+          },
+          "saldo_kg": {
+            "type": "string",
+            "pattern": "^-?\\d+(\\.\\d+)?$",
+            "title": "Saldo Kg",
+            "example": "1250.0000"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id_investigador",
+          "custodio",
+          "frascos",
+          "frascos_vencidos",
+          "frascos_indeterminados",
+          "saldo_kg"
+        ],
+        "title": "SaldoInvestigador",
+        "description": "US-09 — «mis insumos y cuánto me queda»."
       },
       "TokenResponse": {
         "properties": {

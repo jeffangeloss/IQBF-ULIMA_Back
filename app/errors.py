@@ -67,6 +67,14 @@ def _map_database_error(error: psycopg.Error) -> tuple[int, str, str, str]:
     detail = str(error).splitlines()[0]
     lowered = detail.lower()
 
+    # Antes que el mapeo por tipo: estas dos las levanta un trigger con
+    # ERRCODE check_violation, y «regla de negocio incumplida» no le diría al
+    # operario ni qué pasó ni qué hacer.
+    if "saldo indeterminado" in lowered:
+        return 409, "SALDO_INDETERMINADO", "Saldo indeterminado", detail
+    if "custodia de otro investigador" in lowered:
+        return 409, "CUSTODIA_AJENA", "Frasco de otro investigador", detail
+
     if isinstance(error, psycopg.errors.UniqueViolation):
         return 409, "REGISTRO_DUPLICADO", "Registro duplicado", detail
     if isinstance(error, psycopg.errors.ForeignKeyViolation):

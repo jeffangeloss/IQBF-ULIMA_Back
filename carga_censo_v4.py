@@ -1,0 +1,663 @@
+#!/usr/bin/env python3
+"""
+carga_censo_v4.py — genera el SQL de carga inicial desde el censo fotográfico.
+
+Solo emite las filas que superan `_CENSO_PIPELINE/preflight_carga.py`. Una fila
+con una contradicción interna (el neto no cuadra con bruto-tara, el código SUNAT
+no tiene 6 dígitos, el lote es una fecha) NO se carga: se queda fuera y se
+reporta. Es deliberado — es más barato volver a la foto que sacar un número
+inventado de una declaración a SUNAT.
+
+    python3 carga_censo_v4.py --salida bd/carga_censo_liquidos.sql
+    psql "$IQBF_DATABASE_URL" -v ON_ERROR_STOP=1 -f bd/carga_censo_liquidos.sql
+
+El SQL resultante es idempotente (ON CONFLICT DO NOTHING / DO UPDATE) y va
+dentro de una sola transacción: o entra el censo entero o no entra nada.
+"""
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import re
+import sys
+import unicodedata
+from decimal import Decimal
+from pathlib import Path
+
+import openpyxl
+
+RAIZ_CENSO = Path("/Users/jjjangelosss/Desktop/IQF_Censo")
+LIBRO = RAIZ_CENSO / "outputs" / "censo-iqbf-20260805" / \
+    "Cimiento_Censo_IQBF_v5_2026-08-06.xlsx"
+sys.path.insert(0, str(RAIZ_CENSO / "_CENSO_PIPELINE"))
+
+FECHA_CENSO = dt.date(2026, 8, 5)
+ESTABLECIMIENTO = "ULIMA-DOCIMASIA"
+
+# ─── Lista controlada de custodios (US-04) ───────────────────────────────────
+#
+# La columna «Investigador confirmado» del censo es texto libre y trae a la
+# misma persona escrita de tres formas. Sin esta tabla, «Ponce» y «SILVIA
+# PONCE» serían dos custodios distintos y «cuánto le queda a Ponce» daría una
+# cifra incompleta — que es justo lo que US-04 existe para evitar.
+#
+# Cada fusión se apoya en la evidencia de la PROPIA fila (la columna «Custodio
+# (etiqueta)» del frasco), no en un parecido de apellidos:
+#
+#   Ponce / SILVIA PONCE          → los frascos 55 y 56 llevan «SILVIA PONCE»
+#   Yacono / Juan (Carlos) Yacono → los frascos 84 y 99 llevan el nombre entero
+#   VILLAGARCIA                   → el frasco 64 lleva «H. VILLAGARCIA»
+#
+# ÁREA y PERSONA se separan porque el saldo por persona (US-09) y el saldo por
+# área no son la misma pregunta. «Académico (Muedas)» es la persona Muedas
+# dentro del área Académico.
+#
+# REVISAR CON EL LABORATORIO antes de dar la carga por definitiva.
+ALIAS_CUSTODIO: dict[str, tuple[str, str]] = {
+    "ponce":                 ("Silvia Ponce", "PERSONA"),
+    "silvia ponce":          ("Silvia Ponce", "PERSONA"),
+    "yacono":                ("Juan Carlos Yacono", "PERSONA"),
+    "juan yacono":           ("Juan Carlos Yacono", "PERSONA"),
+    "juan carlos yacono":    ("Juan Carlos Yacono", "PERSONA"),
+    "chasquibol":            ("Chasquibol", "PERSONA"),
+    "villagarcia":           ("H. Villagarcía", "PERSONA"),
+    "quino":                 ("Quino", "PERSONA"),
+    "academico (muedas)":    ("Muedas", "PERSONA"),
+    "academico (la cruz)":   ("La Cruz", "PERSONA"),
+    # Áreas: el censo no llegó a nombrar a la persona responsable.
+    "academico":             ("Académico", "AREA"),
+    "ing. civil":            ("Ing. Civil", "AREA"),
+    "ing civil":             ("Ing. Civil", "AREA"),
+    "lab docimasia":         ("Lab. Docimasia", "AREA"),
+}
+
+# ─── Laboratorios ────────────────────────────────────────────────────────────
+#
+# El rótulo del frasco escribe el laboratorio de seis maneras. Se normaliza al
+# nombre del catálogo (migración 005) para que «dame el etanol del laboratorio
+# de alimentos» sea una consulta y no una búsqueda a ojo.
+#
+# Un frasco cuyo rótulo NO nombra laboratorio se queda sin laboratorio: sale en
+# «sin asignar», que es una pregunta abierta, no un dato inventado.
+LABORATORIO_ROTULO = {
+    "ing. civil":     "Ingeniería Civil",
+    "ing civil":      "Ingeniería Civil",
+    "docimasia":      "Docimasia",
+    "academico":      "Académico",
+    "lab alimentos":  "Laboratorio de Alimentos",
+    "lab. quimica":   "Laboratorio de Química",
+    "lab quimica":    "Laboratorio de Química",
+    "faugro microb.": "FAUGRO Microbiología",
+    "faugro microb":  "FAUGRO Microbiología",
+}
+
+# Custodios que son un ÁREA y no una persona: su laboratorio es él mismo.
+LABORATORIO_DE_AREA = {
+    "Ing. Civil":     "Ingeniería Civil",
+    "Lab. Docimasia": "Docimasia",
+    "Académico":      "Académico",
+}
+
+# El nombre del insumo se toma del prefijo IQF####, no de la celda «Insumo»:
+# «Acido Clorhidrico» y «Acido Clorhidrico Ultrex» comparten el prefijo IQF0102
+# porque son la MISMA sustancia fiscalizada; lo que cambia es el grado, que vive
+# en el lote. Mezclarlos crearía dos insumos para un solo código SUNAT.
+NOMBRE_INSUMO = {
+    "IQF0102": "Ácido clorhídrico",
+    "IQF0108": "Ácido sulfúrico",
+    "IQF0401": "Acetona",
+    "IQF0501": "Éter dietílico",
+    "IQF0605": "N-Hexano",
+    "IQF0613": "Tolueno",
+    "IQF0702": "Hidróxido de amonio",
+    "IQF0708": "Hidróxido de sodio en solución",
+}
+
+
+# ─── utilidades ──────────────────────────────────────────────────────────────
+
+def sql(valor) -> str:
+    """Literal SQL. None → NULL; el resto se escapa."""
+    if valor is None or valor == "":
+        return "NULL"
+    if isinstance(valor, bool):
+        return "TRUE" if valor else "FALSE"
+    if isinstance(valor, (int, float, Decimal)):
+        return str(valor)
+    if isinstance(valor, dt.datetime):
+        return "'" + valor.isoformat(sep=" ") + "'"
+    if isinstance(valor, dt.date):
+        return "'" + valor.isoformat() + "'"
+    return "'" + str(valor).replace("'", "''") + "'"
+
+
+def limpiar(texto) -> str | None:
+    if texto is None:
+        return None
+    t = " ".join(str(texto).split()).strip()
+    return t or None
+
+
+def resolver_custodio(texto) -> tuple[str, str] | None:
+    """Texto libre del censo → (nombre canónico, PERSONA|AREA). Ver ALIAS_CUSTODIO.
+
+    Un nombre que no esté en la tabla se conserva tal cual, capitalizado, y se
+    marca PERSONA: no se inventa una fusión por parecido. Aparecerá en el
+    informe de carga para que el laboratorio lo confirme.
+    """
+    t = limpiar(texto)
+    if not t:
+        return None
+    canonico = ALIAS_CUSTODIO.get(sin_acento(t))
+    if canonico:
+        return canonico
+    return (" ".join(p.capitalize() for p in t.split()), "PERSONA")
+
+
+def recortar(texto, limite: int) -> str | None:
+    """Ajusta al ancho de la columna sin partir una palabra por la mitad.
+
+    El censo escribe frases enteras donde la BD espera una etiqueta: la
+    concentración del sulfúrico llega como «97.0 % (Contenido H2SO4, Resultado
+    de Analisis del lote)» y la columna admite 40. Se descarta primero el
+    paréntesis explicativo, que es glosa, y solo si aún no cabe se corta.
+    """
+    t = limpiar(texto)
+    if not t:
+        return None
+    if len(t) <= limite:
+        return t
+    sin_parentesis = limpiar(re.sub(r"\s*\([^)]*\)", "", t))
+    if sin_parentesis and len(sin_parentesis) <= limite:
+        return sin_parentesis
+    base = (sin_parentesis or t)[:limite]
+    corte = base.rsplit(" ", 1)[0] if " " in base[limite - 12:] else base
+    return corte.rstrip(" ,;-")
+
+
+def sin_acento(texto) -> str:
+    return "".join(c for c in unicodedata.normalize("NFD", str(texto or ""))
+                   if unicodedata.category(c) != "Mn").lower().strip()
+
+
+def a_fecha(valor) -> dt.date | None:
+    if isinstance(valor, dt.datetime):
+        return valor.date()
+    if isinstance(valor, dt.date):
+        return valor
+    t = limpiar(valor)
+    if not t:
+        return None
+    try:
+        return dt.date.fromisoformat(t[:10])
+    except ValueError:
+        return None
+
+
+def a_hora(valor) -> dt.datetime | None:
+    if isinstance(valor, dt.datetime):
+        return valor
+    t = limpiar(valor)
+    if not t:
+        return None
+    try:
+        return dt.datetime.fromisoformat(t)
+    except ValueError:
+        return None
+
+
+def a_decimal(valor) -> Decimal | None:
+    if valor is None or valor == "":
+        return None
+    try:
+        return Decimal(str(valor)).quantize(Decimal("0.0001"))
+    except Exception:
+        return None
+
+
+# ─── parsers del censo ───────────────────────────────────────────────────────
+
+RE_CAPACIDAD = re.compile(r"^\s*([\d.,]+)\s*(mL|ml|L|g|kg|Kg)\b")
+RE_UBICACION = re.compile(
+    r"Casillero\s+(\d+)"
+    r"(?:\s*\(([^)]+)\))?"
+    r"(?:.*?Nivel\s+(\d+))?"
+    r"(?:.*?pos\.?\s*([\w-]+))?",
+    re.IGNORECASE)
+
+
+def parsear_presentacion(texto: str) -> tuple[Decimal, str, str | None]:
+    """«2.5 L, botella de VIDRIO AMBAR» → (2.5, 'L', 'Botella de vidrio ámbar')."""
+    t = limpiar(texto) or ""
+    m = RE_CAPACIDAD.match(t)
+    if not m:
+        raise ValueError(f"presentación no reconocida: {texto!r}")
+    capacidad = Decimal(m.group(1).replace(",", "."))
+    unidad = {"ml": "mL", "l": "L", "g": "g", "kg": "kg"}[m.group(2).lower()]
+    resto = t[m.end():].lstrip(" ,")
+    envase = None
+    if resto:
+        envase = resto.replace("botella de", "Botella de").strip()
+        envase = envase[0].upper() + envase[1:].lower() if envase else None
+        if envase and not envase.lower().startswith("botella"):
+            envase = "Botella " + envase
+    return capacidad, unidad, recortar(envase or "Botella", 40) or "Botella"
+
+
+def parsear_ubicacion(texto: str) -> dict | None:
+    """«Casillero 2 (ÁCIDOS FUERTES) · Nivel 3 · pos. 76» → sus cuatro partes.
+
+    El nombre de la puerta es el que se usa para hablar de la balda: «ÁCIDOS
+    FUERTES», nunca «la del medio», que depende de dónde se ponga uno.
+    """
+    t = limpiar(texto)
+    if not t:
+        return None
+    m = RE_UBICACION.search(t)
+    if not m:
+        return None
+    casillero = int(m.group(1))
+    puerta = limpiar(m.group(2))
+    nivel = int(m.group(3)) if m.group(3) else None
+    posicion = limpiar(m.group(4))
+    partes = [f"Casillero {casillero}" + (f" ({puerta})" if puerta else "")]
+    if nivel is not None:
+        partes.append(f"Nivel {nivel}")
+    if posicion:
+        partes.append(f"pos. {posicion}")
+    return {
+        "codigo": f"C{casillero}"
+                  + (f"-N{nivel}" if nivel is not None else "")
+                  + (f"-P{posicion}" if posicion else ""),
+        "nombre": " · ".join(partes),
+        "casillero": casillero,
+        "puerta": puerta,
+        "nivel": nivel,
+        "posicion": posicion,
+    }
+
+
+# ─── extracción ──────────────────────────────────────────────────────────────
+
+def leer_censo(filas_pedidas: list[int] | None):
+    from preflight_carga import cargar, revisar
+
+    idx, filas = cargar()
+    objetivo = filas_pedidas or [
+        n for n, v in filas.items() if str(v[idx["¿Existe?"]]) == "Sí"]
+
+    limpias, descartadas = [], []
+    for n in sorted(objetivo):
+        bloqueos, _avisos = revisar(n, filas[n], idx)
+        if bloqueos:
+            codigo = limpiar(filas[n][idx["Código interno"]]) or f"fila {n}"
+            descartadas.append((n, codigo.lstrip("'"), bloqueos))
+        else:
+            limpias.append((n, filas[n]))
+    return idx, limpias, descartadas
+
+
+def construir(idx, limpias):
+    def g(v, col):
+        return v[idx[col]]
+
+    insumos, presentaciones, densidades = {}, {}, {}
+    lotes, frascos, ubicaciones, investigadores = {}, [], {}, set()
+
+    for fila, v in limpias:
+        codigo = (limpiar(g(v, "Código interno")) or "").lstrip("'")
+        m = re.match(r"^(IQF\d{4})-(\w+)-(\w+)$", codigo)
+        if not m:
+            raise ValueError(f"fila {fila}: código interno inesperado {codigo!r}")
+        id_insumo, segmento, _ = m.groups()
+        id_presentacion = f"{id_insumo}-{segmento}"
+
+        capacidad, unidad, envase = parsear_presentacion(g(v, "Presentación"))
+        densidad = a_decimal(g(v, "Densidad"))
+        nominal = a_decimal(g(v, "Contenido nominal (g)"))
+        sunat = limpiar(g(v, "Código SUNAT"))
+
+        # ── insumo ──────────────────────────────────────────────────────────
+        insumos.setdefault(id_insumo, {
+            "id": id_insumo,
+            "nombre": NOMBRE_INSUMO.get(id_insumo,
+                                        limpiar(g(v, "Insumo")) or id_insumo),
+            "tipo": "LIQUIDO",
+            "unidad_base": "g",
+            # En estos 20 frascos la densidad no varía entre lotes de una misma
+            # presentación: varía ENTRE presentaciones (marcas y concentraciones
+            # distintas). Por eso vive en la presentación y densidad_variable
+            # queda en FALSE. Si algún día un lote midiera otra densidad, se
+            # marca TRUE y se mueve a LOTE.
+            "densidad_variable": False,
+        })
+
+        # ── presentación ────────────────────────────────────────────────────
+        previa = presentaciones.get(id_presentacion)
+        if previa and previa["densidad"] != densidad:
+            raise ValueError(
+                f"la presentación {id_presentacion} aparece con dos densidades "
+                f"({previa['densidad']} y {densidad}): revísese antes de cargar")
+        presentaciones.setdefault(id_presentacion, {
+            "id": id_presentacion,
+            "id_insumo": id_insumo,
+            "codigo_bf_sunat": sunat,
+            "codigo_presentacion": recortar(segmento, 20),
+            "concentracion": recortar(g(v, "Concentración"), 40),
+            "capacidad": capacidad,
+            "unidad": unidad,
+            "tipo_envase": envase,
+            "equivalencia_g": nominal,
+            "densidad": densidad,
+        })
+        if densidad is not None:
+            densidades.setdefault(id_presentacion, {
+                "id_presentacion": id_presentacion,
+                "valor": densidad,
+                "fuente": limpiar(g(v, "Densidad (etiqueta)"))
+                          and "Etiqueta del fabricante"
+                          or "Censo fotográfico 2026-08-05",
+                "vigencia_desde": FECHA_CENSO,
+            })
+
+        # ── lote ────────────────────────────────────────────────────────────
+        numero_lote = limpiar(g(v, "Lote"))
+        clave_lote = (id_presentacion, numero_lote)
+        lotes.setdefault(clave_lote, {
+            "clave": clave_lote,
+            "id_presentacion": id_presentacion,
+            "numero_lote": recortar(numero_lote, 60),
+            "grado_pureza": recortar(g(v, "Grado"), 40),
+            "fecha_ingreso": a_fecha(g(v, "Fecha ingreso")),
+            "fecha_caducidad": a_fecha(g(v, "Caducidad")),
+        })
+
+        # ── ubicación ───────────────────────────────────────────────────────
+        ubi = parsear_ubicacion(g(v, "Ubicación"))
+        if ubi:
+            ubicaciones.setdefault(ubi["codigo"], ubi)
+
+        # ── custodio ────────────────────────────────────────────────────────
+        # Manda «Investigador confirmado»: si el laboratorio lo confirmó en
+        # campo, su testimonio pesa más que el rótulo del frasco.
+        resuelto = resolver_custodio(
+            g(v, "Investigador confirmado") or g(v, "Investigador (registrado)"))
+        custodio = resuelto[0] if resuelto else None
+        if resuelto:
+            investigadores.add(resuelto)
+
+        # ── frasco ──────────────────────────────────────────────────────────
+        bruto = a_decimal(g(v, "Peso bruto balanza (g)"))
+        tara = a_decimal(g(v, "Tara (kg)"))
+        tara = tara * 1000 if tara is not None else a_decimal(
+            g(v, "Tara de etiqueta (g)"))
+        neto = (bruto - tara) if (bruto is not None and tara is not None) else None
+
+        laboratorio = LABORATORIO_ROTULO.get(
+            sin_acento(g(v, "Laboratorio (etiqueta)")))
+
+        frascos.append({
+            "id": codigo,
+            "laboratorio": laboratorio,
+            "clave_lote": clave_lote,
+            "custodio": custodio,
+            "ubicacion": ubi["codigo"] if ubi else None,
+            "precision_ubicacion": recortar(g(v, "Precisión de la ubicación"), 80),
+            "peso_bruto_g": bruto,
+            "tara_g": tara,
+            "neto_g": neto,
+            "fuente_tara": recortar(g(v, "Fuente de la tara"), 200),
+            "fecha_pesaje": a_hora(g(v, "Fecha de pesado")),
+            "condicion_envase": recortar(g(v, "Estado físico"), 20),
+            "volumen_ml": (neto / densidad).quantize(Decimal("0.0001"))
+                          if (neto is not None and densidad) else None,
+            "observaciones": limpiar(g(v, "Observación")),
+            "fila_excel": fila,
+            "accion": limpiar(g(v, "Acción")),
+        })
+
+    return {
+        "insumos": list(insumos.values()),
+        "presentaciones": list(presentaciones.values()),
+        "densidades": list(densidades.values()),
+        "lotes": list(lotes.values()),
+        "ubicaciones": list(ubicaciones.values()),
+        "investigadores": sorted(investigadores),
+        "frascos": frascos,
+    }
+
+
+# ─── emisión del SQL ─────────────────────────────────────────────────────────
+
+def emitir(datos, descartadas) -> str:
+    o: list[str] = []
+    w = o.append
+
+    w("-- ═══════════════════════════════════════════════════════════════════")
+    w("-- Carga inicial del censo fotográfico IQBF — insumos líquidos")
+    w(f"-- Generado por carga_censo_v4.py · fecha de corte {FECHA_CENSO}")
+    w(f"-- Fuente: {LIBRO.name}")
+    w("--")
+    w(f"-- {len(datos['frascos'])} frascos cargados · "
+      f"{len(descartadas)} descartados por el pre-flight")
+    w("--")
+    w("-- Los descartados NO son campos vacíos: son contradicciones internas.")
+    w("-- Se resuelven volviendo a la foto, no eligiendo el número más creíble.")
+    for fila, codigo, bloqueos in descartadas:
+        w(f"--   fila {fila:>3}  {codigo}")
+        for b in bloqueos:
+            w(f"--       · {b}")
+    w("-- ═══════════════════════════════════════════════════════════════════")
+    w("")
+    w("BEGIN;")
+    w("SET LOCAL search_path TO iqbf, public, pg_catalog;")
+    w("")
+
+    w("-- ─── establecimiento y ubicaciones ────────────────────────────────")
+    w(f"INSERT INTO establecimiento (codigo, nombre) VALUES "
+      f"({sql(ESTABLECIMIENTO)}, {sql('Laboratorio de Docimasia — Universidad de Lima')})")
+    w("  ON CONFLICT (codigo) DO NOTHING;")
+    w("")
+    for u in sorted(datos["ubicaciones"], key=lambda x: x["codigo"]):
+        w("INSERT INTO ubicacion (codigo, nombre, id_establecimiento, "
+          "casillero, nombre_puerta, nivel, posicion)")
+        w(f"SELECT {sql(u['codigo'])}, {sql(u['nombre'])}, e.id_establecimiento, "
+          f"{sql(u['casillero'])}, {sql(u['puerta'])}, {sql(u['nivel'])}, "
+          f"{sql(u['posicion'])}")
+        w(f"  FROM establecimiento e WHERE e.codigo = {sql(ESTABLECIMIENTO)}")
+        w("  ON CONFLICT (codigo) DO UPDATE SET")
+        w("    nombre = EXCLUDED.nombre, casillero = EXCLUDED.casillero,")
+        w("    nombre_puerta = EXCLUDED.nombre_puerta, nivel = EXCLUDED.nivel,")
+        w("    posicion = EXCLUDED.posicion;")
+    w("")
+
+    w("-- ─── investigadores (lista controlada · US-04) ────────────────────")
+    w("-- Nombres canónicos: ver ALIAS_CUSTODIO en carga_censo_v4.py.")
+    for nombre, tipo in datos["investigadores"]:
+        lab = LABORATORIO_DE_AREA.get(nombre)
+        w("INSERT INTO investigador (nombre, tipo, id_laboratorio)")
+        w(f"SELECT {sql(nombre)}, {sql(tipo)}, "
+          + (f"(SELECT id_laboratorio FROM laboratorio WHERE nombre = {sql(lab)})"
+             if lab else "NULL"))
+        w("  ON CONFLICT (nombre) DO UPDATE SET "
+          "id_laboratorio = COALESCE(EXCLUDED.id_laboratorio, "
+          "investigador.id_laboratorio);")
+    w("")
+
+    w("-- ─── el censo necesita un usuario que lo firme ────────────────────")
+    w("-- Sin cuenta no hay movimiento: registrado_por es NOT NULL y la")
+    w("-- trazabilidad de US-18 exige saber quién cargó cada saldo.")
+    w("DO $$")
+    w("BEGIN")
+    w("  IF NOT EXISTS (SELECT 1 FROM usuario) THEN")
+    w("    RAISE EXCEPTION 'No hay ninguna cuenta: cree el administrador con "
+      "«python -m app.cli create-admin» antes de cargar el censo';")
+    w("  END IF;")
+    w("END;")
+    w("$$;")
+    w("")
+
+    w("-- ─── insumos ──────────────────────────────────────────────────────")
+    for i in sorted(datos["insumos"], key=lambda x: x["id"]):
+        w("INSERT INTO insumo (id_insumo, nombre_comercial, tipo, unidad_base, "
+          "densidad_variable, estado)")
+        w(f"VALUES ({sql(i['id'])}, {sql(i['nombre'])}, {sql(i['tipo'])}, "
+          f"{sql(i['unidad_base'])}, {sql(i['densidad_variable'])}, 'VIGENTE')")
+        w("  ON CONFLICT (id_insumo) DO UPDATE SET")
+        w("    nombre_comercial = EXCLUDED.nombre_comercial,")
+        w("    densidad_variable = EXCLUDED.densidad_variable;")
+    w("")
+
+    w("-- ─── presentaciones ───────────────────────────────────────────────")
+    for p in sorted(datos["presentaciones"], key=lambda x: x["id"]):
+        w("INSERT INTO presentacion (id_presentacion, id_insumo, codigo_bf_sunat,")
+        w("  codigo_presentacion, concentracion, capacidad, unidad, tipo_envase,")
+        w("  equivalencia_g, densidad, vigencia_desde, estado)")
+        w(f"VALUES ({sql(p['id'])}, {sql(p['id_insumo'])}, "
+          f"{sql(p['codigo_bf_sunat'])}, {sql(p['codigo_presentacion'])},")
+        w(f"  {sql(p['concentracion'])}, {sql(p['capacidad'])}, {sql(p['unidad'])}, "
+          f"{sql(p['tipo_envase'])},")
+        w(f"  {sql(p['equivalencia_g'])}, {sql(p['densidad'])}, "
+          f"{sql(FECHA_CENSO)}, 'VIGENTE')")
+        w("  ON CONFLICT (id_presentacion) DO UPDATE SET")
+        w("    codigo_bf_sunat = EXCLUDED.codigo_bf_sunat,")
+        w("    equivalencia_g = EXCLUDED.equivalencia_g,")
+        w("    densidad = EXCLUDED.densidad;")
+    w("")
+
+    w("-- ─── densidades versionadas (US-01 · fuente y vigencia) ───────────")
+    for d in sorted(datos["densidades"], key=lambda x: x["id_presentacion"]):
+        w("INSERT INTO densidad_vigencia (id_presentacion, valor, unidad, fuente, "
+          "vigencia_desde)")
+        w(f"SELECT {sql(d['id_presentacion'])}, {sql(d['valor'])}, 'g/mL', "
+          f"{sql(d['fuente'])}, {sql(d['vigencia_desde'])}")
+        w("WHERE NOT EXISTS (SELECT 1 FROM densidad_vigencia dv")
+        w(f"   WHERE dv.id_presentacion = {sql(d['id_presentacion'])}")
+        w(f"     AND dv.vigencia_desde = {sql(d['vigencia_desde'])});")
+    w("")
+
+    w("-- ─── lotes ────────────────────────────────────────────────────────")
+    for lote in sorted(datos["lotes"], key=lambda x: (x["id_presentacion"],
+                                                      x["numero_lote"] or "")):
+        w("INSERT INTO lote (id_presentacion, numero_lote, grado_pureza,")
+        w("  fecha_ingreso, fecha_caducidad, estado)")
+        w(f"SELECT {sql(lote['id_presentacion'])}, {sql(lote['numero_lote'])}, "
+          f"{sql(lote['grado_pureza'])},")
+        w(f"  {sql(lote['fecha_ingreso'])}, {sql(lote['fecha_caducidad'])}, 'ACTIVO'")
+        w("WHERE NOT EXISTS (SELECT 1 FROM lote l")
+        w(f"   WHERE l.id_presentacion = {sql(lote['id_presentacion'])}")
+        w(f"     AND l.numero_lote IS NOT DISTINCT FROM {sql(lote['numero_lote'])});")
+    w("")
+
+    w("-- ─── frascos ──────────────────────────────────────────────────────")
+    w("-- peso_neto_actual_g entra en 0 y lo sube el movimiento de censo_inicial:")
+    w("-- el saldo solo lo escribe el trigger del kardex (fn_frasco_guardia).")
+    for f in datos["frascos"]:
+        pres, numero = f["clave_lote"]
+        w(f"-- fila {f['fila_excel']} del censo")
+        w("INSERT INTO frasco (id_frasco, id_lote, id_investigador, id_ubicacion,")
+        w("  id_laboratorio_actual,")
+        w("  precision_ubicacion, peso_bruto_g, tara_g, peso_neto_actual_g,")
+        w("  volumen_inicial_ml, fuente_tara, fecha_pesaje, condicion_envase,")
+        w("  existe, estado, observaciones)")
+        w(f"SELECT {sql(f['id'])}, l.id_lote,")
+        w(f"  (SELECT id_investigador FROM investigador WHERE nombre = "
+          f"{sql(f['custodio'])}),")
+        w(f"  (SELECT id_ubicacion FROM ubicacion WHERE codigo = "
+          f"{sql(f['ubicacion'])}),")
+        w(f"  (SELECT id_laboratorio FROM laboratorio WHERE nombre = "
+          f"{sql(f['laboratorio'])}),")
+        w(f"  {sql(f['precision_ubicacion'])}, {sql(f['peso_bruto_g'])}, "
+          f"{sql(f['tara_g'])}, 0,")
+        w(f"  {sql(f['volumen_ml'])}, {sql(f['fuente_tara'])}, "
+          f"{sql(f['fecha_pesaje'])}, {sql(f['condicion_envase'])},")
+        w(f"  TRUE, 'EN_USO', {sql(f['observaciones'])}")
+        w("  FROM lote l")
+        w(f" WHERE l.id_presentacion = {sql(pres)}")
+        w(f"   AND l.numero_lote IS NOT DISTINCT FROM {sql(numero)}")
+        w("  ON CONFLICT (id_frasco) DO UPDATE SET")
+        w("    id_investigador = EXCLUDED.id_investigador,")
+        w("    id_ubicacion = EXCLUDED.id_ubicacion,")
+        w("    id_laboratorio_actual = COALESCE(EXCLUDED.id_laboratorio_actual,")
+        w("                                     frasco.id_laboratorio_actual),")
+        w("    peso_bruto_g = EXCLUDED.peso_bruto_g,")
+        w("    tara_g = EXCLUDED.tara_g,")
+        w("    fuente_tara = EXCLUDED.fuente_tara,")
+        w("    fecha_pesaje = EXCLUDED.fecha_pesaje,")
+        w("    condicion_envase = EXCLUDED.condicion_envase;")
+        w("")
+
+    w("-- ─── saldo inicial: un movimiento de censo por frasco ─────────────")
+    w("-- Hasta aquí ningún frasco tiene saldo. Si la carga falla a medias, no")
+    w("-- queda inventario fantasma.")
+    for f in datos["frascos"]:
+        if f["neto_g"] is None:
+            w(f"-- {f['id']}: sin tara, saldo INDETERMINADO. No se abre kardex.")
+            continue
+        w("INSERT INTO kardex (id_frasco, tipo_movimiento, motivo, cantidad_g,")
+        w("  cantidad_registrada, unidad_registrada, id_investigador_destinatario,")
+        w("  fecha_hora, fecha_operacion, registrado_por, saldo_resultante_g)")
+        w(f"SELECT {sql(f['id'])}, 'ENTRADA', 'censo_inicial', {sql(f['neto_g'])},")
+        w(f"  {sql(f['neto_g'])}, 'g',")
+        w(f"  (SELECT id_investigador FROM investigador WHERE nombre = "
+          f"{sql(f['custodio'])}),")
+        w(f"  {sql(f['fecha_pesaje'])}, {sql(FECHA_CENSO)}, u.id_usuario, 0")
+        w("  FROM usuario u")
+        # Recargar el censo no puede volver a sumar el saldo: el kardex es
+        # inmutable y un segundo censo_inicial duplicaría las existencias.
+        w("  WHERE NOT EXISTS (SELECT 1 FROM kardex k")
+        w(f"     WHERE k.id_frasco = {sql(f['id'])}")
+        w("       AND k.motivo = 'censo_inicial')")
+        w("  ORDER BY u.id_usuario LIMIT 1;")
+    w("")
+
+    w("-- ─── comprobación: la carga se revierte si algo no cuadra ─────────")
+    w("DO $$")
+    w("DECLARE v_malos INTEGER;")
+    w("BEGIN")
+    w("  SELECT count(*) INTO v_malos FROM frasco f")
+    w("   WHERE f.peso_bruto_g IS NOT NULL AND f.tara_g IS NOT NULL")
+    w("     AND f.peso_neto_actual_g IS NOT NULL")
+    w("     AND abs(f.peso_neto_actual_g - (f.peso_bruto_g - f.tara_g)) > 0.05;")
+    w("  IF v_malos > 0 THEN")
+    w("    RAISE EXCEPTION 'ABORTADA: % frascos con saldo != bruto-tara', v_malos;")
+    w("  END IF;")
+    w("END;")
+    w("$$;")
+    w("")
+    w("COMMIT;")
+    w("")
+    return "\n".join(o)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--salida", type=Path,
+                        default=Path("bd/carga_censo_liquidos.sql"))
+    parser.add_argument("--filas", type=int, nargs="*",
+                        help="filas del Excel; por defecto todas las ¿Existe?=Sí")
+    args = parser.parse_args()
+
+    idx, limpias, descartadas = leer_censo(args.filas)
+    datos = construir(idx, limpias)
+
+    salida = args.salida
+    salida.parent.mkdir(parents=True, exist_ok=True)
+    salida.write_text(emitir(datos, descartadas), encoding="utf-8")
+
+    print(f"SQL escrito en {salida}")
+    print(f"  insumos        {len(datos['insumos']):>3}")
+    print(f"  presentaciones {len(datos['presentaciones']):>3}")
+    print(f"  densidades     {len(datos['densidades']):>3}")
+    print(f"  lotes          {len(datos['lotes']):>3}")
+    print(f"  ubicaciones    {len(datos['ubicaciones']):>3}")
+    print(f"  investigadores {len(datos['investigadores']):>3}")
+    print(f"  frascos        {len(datos['frascos']):>3}")
+    print(f"  descartados    {len(descartadas):>3}")
+    for fila, codigo, bloqueos in descartadas:
+        print(f"    fila {fila:>3} {codigo}: {bloqueos[0]}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

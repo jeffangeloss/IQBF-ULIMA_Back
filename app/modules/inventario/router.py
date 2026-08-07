@@ -1,0 +1,450 @@
+"""Inventario físico, consumo y declaración — US-05, US-09, US-10, US-11,
+US-12, US-13, US-19, US-20 y US-21.
+
+Tres decisiones que conviene no deshacer:
+
+1. **La búsqueda la resuelve PostgreSQL**, no el cliente. `fn_frasco_coincide`
+   mira nombre, alias, código interno, código SUNAT, presentación y lote. Es lo
+   que permite que «etanol» encuentre los frascos rotulados «Ethanol».
+
+2. **Las reglas de negocio viven en la base**, no aquí. El saldo negativo, la
+   custodia ajena y el saldo indeterminado los rechazan triggers; este módulo
+   se limita a traducir el error de PostgreSQL a `problem+json`. Un `INSERT`
+   manual con psql choca contra las mismas reglas.
+
+3. **El saldo nunca se escribe**: solo lo mueve el kardex (`fn_frasco_guardia`).
+   Aquí no hay ni un UPDATE sobre `frasco.peso_neto_actual_g`.
+"""
+
+from decimal import Decimal
+from typing import Annotated, Any, Literal
+
+from fastapi import APIRouter, Depends, Query, status
+from psycopg import Connection
+
+from app.contracts import Page
+from app.dependencies import get_connection, get_current_user
+from app.errors import ProblemException
+from app.modules.auth.schemas import CurrentUser
+from app.modules.inventario.schemas import (
+    ConsumoCreate,
+    ConsumoOut,
+    Declaracion,
+    FrascoDetalle,
+    FrascoResumen,
+    LineaDeclaracion,
+    MovimientoOut,
+    ResumenPanel,
+    SaldoInvestigador,
+)
+
+
+router = APIRouter(prefix="/api", tags=["Inventario y consumo"])
+
+# Un litro de agua pesa 1000 g; el resto depende de la densidad del líquido.
+FACTOR_A_GRAMOS = {"g": Decimal(1), "kg": Decimal(1000)}
+FACTOR_A_ML = {"mL": Decimal(1), "L": Decimal(1000)}
+
+_COLUMNAS_RESUMEN = """
+    v.id_frasco, v.id_insumo, v.nombre_comercial, v.id_presentacion,
+    v.codigo_bf_sunat, v.concentracion, v.numero_lote,
+    v.peso_neto_actual_g, v.saldo_indeterminado, v.fraccion_llenado,
+    v.volumen_actual_ml, v.densidad_aplicable,
+    v.id_investigador, v.custodio, v.id_laboratorio, v.laboratorio,
+    v.ubicacion, v.posicion,
+    v.condicion_envase, v.estado_frasco, v.fecha_caducidad,
+    v.estado_caducidad, v.dias_sin_movimiento, v.alerta_prioritaria
+"""
+
+
+def _filtros(
+    q: str | None,
+    laboratorio: int | None,
+    custodio: int | None,
+    insumo: str | None,
+    estado_caducidad: str | None,
+    solo_con_saldo: bool,
+) -> tuple[str, list[Any]]:
+    condiciones: list[str] = ["v.estado_frasco <> 'DADO_DE_BAJA'"]
+    params: list[Any] = []
+
+    if q:
+        condiciones.append(
+            "fn_frasco_coincide(v.id_frasco, v.id_insumo, v.nombre_comercial,"
+            " v.codigo_bf_sunat, v.id_presentacion, v.numero_lote, %s)"
+        )
+        params.append(q)
+    if laboratorio is not None:
+        # -1 es «sin laboratorio asignado»: una pregunta abierta que hay que
+        # poder listar, no un valor que se pueda esconder.
+        if laboratorio == -1:
+            condiciones.append("v.id_laboratorio IS NULL")
+        else:
+            condiciones.append("v.id_laboratorio = %s")
+            params.append(laboratorio)
+    if custodio is not None:
+        condiciones.append("v.id_investigador = %s")
+        params.append(custodio)
+    if insumo:
+        condiciones.append("v.id_insumo = %s")
+        params.append(insumo)
+    if estado_caducidad:
+        condiciones.append("v.estado_caducidad = %s")
+        params.append(estado_caducidad)
+    if solo_con_saldo:
+        condiciones.append("v.peso_neto_actual_g > 0")
+
+    return "WHERE " + " AND ".join(condiciones), params
+
+
+@router.get(
+    "/frascos",
+    response_model=Page[FrascoResumen],
+    summary="Buscar frascos por nombre, código, laboratorio o custodio",
+)
+def list_frascos(
+    connection: Annotated[Connection, Depends(get_connection)],
+    _user: Annotated[CurrentUser, Depends(get_current_user)],
+    q: Annotated[str | None, Query(max_length=120)] = None,
+    laboratorio: Annotated[int | None, Query()] = None,
+    custodio: Annotated[int | None, Query()] = None,
+    insumo: Annotated[str | None, Query(max_length=20)] = None,
+    estado_caducidad: Annotated[
+        Literal["VIGENTE", "POR_VENCER", "VENCIDO", "POR_CONFIRMAR"] | None,
+        Query(),
+    ] = None,
+    solo_con_saldo: Annotated[bool, Query()] = False,
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> Page[FrascoResumen]:
+    """Responde la pregunta que llega de viva voz al laboratorio.
+
+    «Dame el etanol del laboratorio de alimentos» es
+    `?q=etanol&laboratorio=<id>`: `q` viaja por los alias del insumo, así que
+    encuentra también los frascos rotulados «Ethanol» o «Alcohol etílico».
+    """
+    where, params = _filtros(
+        q, laboratorio, custodio, insumo, estado_caducidad, solo_con_saldo
+    )
+    total = connection.execute(
+        f"SELECT count(*) AS total FROM v_alertas_v4 v {where}", params
+    ).fetchone()["total"]
+    rows = connection.execute(
+        f"""
+        SELECT {_COLUMNAS_RESUMEN}
+          FROM v_alertas_v4 v
+          {where}
+         ORDER BY v.alerta_prioritaria, v.nombre_comercial, v.id_frasco
+         LIMIT %s OFFSET %s
+        """,
+        [*params, page_size, (page - 1) * page_size],
+    ).fetchall()
+    return Page[FrascoResumen](
+        items=[FrascoResumen(**row) for row in rows],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
+
+
+def _movimientos(connection: Connection, id_frasco: str) -> list[MovimientoOut]:
+    rows = connection.execute(
+        """
+        SELECT k.id_movimiento, k.tipo_movimiento, k.motivo, k.cantidad_g,
+               k.cantidad_registrada, k.unidad_registrada, k.densidad_aplicada,
+               k.saldo_resultante_g, k.peso_antes_g, k.fecha_hora,
+               k.fecha_operacion, k.curso,
+               u.nombre AS registrado_por,
+               COALESCE(dest.nombre, orig.nombre) AS investigador
+          FROM kardex k
+          LEFT JOIN usuario u      ON u.id_usuario = k.registrado_por
+          LEFT JOIN investigador dest
+                 ON dest.id_investigador = k.id_investigador_destinatario
+          LEFT JOIN investigador orig
+                 ON orig.id_investigador = k.id_investigador_origen
+         WHERE k.id_frasco = %s
+         ORDER BY k.fecha_hora DESC, k.id_movimiento DESC
+        """,
+        (id_frasco,),
+    ).fetchall()
+    return [MovimientoOut(**row) for row in rows]
+
+
+@router.get(
+    "/frascos/{id_frasco}",
+    response_model=FrascoDetalle,
+    summary="Ficha de un frasco con su historial",
+)
+def get_frasco(
+    id_frasco: str,
+    connection: Annotated[Connection, Depends(get_connection)],
+    _user: Annotated[CurrentUser, Depends(get_current_user)],
+) -> FrascoDetalle:
+    row = connection.execute(
+        f"""
+        SELECT {_COLUMNAS_RESUMEN},
+               v.tipo, v.capacidad, v.unidad, v.tipo_envase,
+               v.contenido_nominal_g, v.grado_pureza, v.fecha_ingreso,
+               v.peso_bruto_g, v.tara_g, v.peso_neto_inicial_g,
+               v.fuente_tara, v.fecha_pesaje,
+               v.casillero, v.nombre_puerta, v.nivel, v.precision_ubicacion,
+               v.observaciones
+          FROM v_alertas_v4 v
+         WHERE v.id_frasco = %s
+        """,
+        (id_frasco,),
+    ).fetchone()
+    if row is None:
+        raise ProblemException(
+            404,
+            "FRASCO_NO_EXISTE",
+            "Frasco inexistente",
+            f"No existe el frasco '{id_frasco}'.",
+        )
+    return FrascoDetalle(**row, movimientos=_movimientos(connection, id_frasco))
+
+
+@router.get(
+    "/inventario/panel",
+    response_model=ResumenPanel,
+    summary="Cifras de cabecera del inventario",
+)
+def panel(
+    connection: Annotated[Connection, Depends(get_connection)],
+    _user: Annotated[CurrentUser, Depends(get_current_user)],
+) -> ResumenPanel:
+    row = connection.execute(
+        """
+        SELECT count(*)::integer AS frascos,
+               count(*) FILTER (WHERE peso_neto_actual_g > 0)::integer
+                 AS frascos_con_saldo,
+               COALESCE(round(sum(peso_neto_actual_g) / 1000.0, 4), 0)
+                 AS saldo_total_kg,
+               count(*) FILTER (WHERE estado_caducidad = 'VENCIDO')::integer
+                 AS frascos_vencidos,
+               count(*) FILTER (WHERE estado_caducidad = 'POR_VENCER')::integer
+                 AS frascos_por_vencer,
+               count(*) FILTER (WHERE saldo_indeterminado)::integer
+                 AS frascos_indeterminados,
+               count(*) FILTER (WHERE dias_sin_movimiento >= 730)::integer
+                 AS frascos_dormidos,
+               count(DISTINCT id_investigador)::integer AS investigadores,
+               count(DISTINCT codigo_bf_sunat)::integer AS codigos_sunat
+          FROM v_inventario_v4
+         WHERE estado_frasco <> 'DADO_DE_BAJA'
+        """
+    ).fetchone()
+    return ResumenPanel(**row)
+
+
+@router.get(
+    "/inventario/saldo-investigador",
+    response_model=list[SaldoInvestigador],
+    summary="Saldo por custodio (US-09)",
+)
+def saldo_por_investigador(
+    connection: Annotated[Connection, Depends(get_connection)],
+    _user: Annotated[CurrentUser, Depends(get_current_user)],
+    con_frascos: Annotated[bool, Query()] = True,
+) -> list[SaldoInvestigador]:
+    rows = connection.execute(
+        f"""
+        SELECT id_investigador, custodio, frascos::integer,
+               frascos_vencidos::integer, frascos_indeterminados::integer,
+               saldo_kg
+          FROM v_saldo_investigador_v4
+         {'WHERE frascos > 0' if con_frascos else ''}
+         ORDER BY saldo_kg DESC, custodio
+        """
+    ).fetchall()
+    return [SaldoInvestigador(**row) for row in rows]
+
+
+@router.get(
+    "/inventario/saldo-laboratorio",
+    summary="Stock por laboratorio e insumo (US-11)",
+)
+def saldo_por_laboratorio(
+    connection: Annotated[Connection, Depends(get_connection)],
+    _user: Annotated[CurrentUser, Depends(get_current_user)],
+    laboratorio: Annotated[int | None, Query()] = None,
+) -> list[dict[str, Any]]:
+    where, params = ("WHERE id_laboratorio = %s", [laboratorio]) \
+        if laboratorio is not None else ("", [])
+    rows = connection.execute(
+        f"""
+        SELECT id_laboratorio, laboratorio, id_insumo, nombre_comercial,
+               frascos::integer, frascos_vencidos::integer,
+               saldo_kg::text AS saldo_kg
+          FROM v_saldo_laboratorio
+          {where}
+         ORDER BY laboratorio, nombre_comercial
+        """,
+        params,
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+@router.get(
+    "/declaracion/sunat",
+    response_model=Declaracion,
+    summary="Rollup por código de presentación SUNAT (US-21)",
+)
+def declaracion_sunat(
+    connection: Annotated[Connection, Depends(get_connection)],
+    _user: Annotated[CurrentUser, Depends(get_current_user)],
+) -> Declaracion:
+    rows = connection.execute(
+        """
+        SELECT codigo_bf_sunat, id_insumo, nombre_comercial, tipo,
+               frascos::integer, frascos_indeterminados::integer,
+               saldo_kg, saldo_vencido_kg
+          FROM v_declaracion_sunat
+         ORDER BY codigo_bf_sunat
+        """
+    ).fetchall()
+    lineas = [LineaDeclaracion(**row) for row in rows]
+    indeterminados = sum(linea.frascos_indeterminados for linea in lineas)
+    advertencia = None
+    if indeterminados:
+        # No se declara un total redondo cuando se sabe que está incompleto.
+        advertencia = (
+            f"{indeterminados} frasco(s) no están sumados por falta de tara: "
+            "el total es un mínimo, no el inventario completo."
+        )
+    return Declaracion(
+        lineas=lineas,
+        total_kg=sum((linea.saldo_kg or Decimal(0) for linea in lineas),
+                     Decimal(0)),
+        frascos=sum(linea.frascos for linea in lineas),
+        frascos_indeterminados=indeterminados,
+        advertencia=advertencia,
+    )
+
+
+@router.post(
+    "/movimientos/consumo",
+    response_model=ConsumoOut,
+    status_code=status.HTTP_201_CREATED,
+    summary="Registrar un consumo (US-05, US-12, US-13, US-20)",
+)
+def registrar_consumo(
+    payload: ConsumoCreate,
+    connection: Annotated[Connection, Depends(get_connection)],
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+) -> ConsumoOut:
+    """Descuenta del frasco y deja el rastro.
+
+    La conversión a gramos se hace aquí y **se congela** en el movimiento junto
+    con la densidad usada: si mañana se corrige la densidad del lote, este
+    consumo seguirá diciendo con qué número se calculó (US-20).
+    """
+    frasco = connection.execute(
+        """
+        SELECT f.id_frasco, f.peso_neto_actual_g, f.id_investigador,
+               i.tipo, COALESCE(l.densidad, p.densidad) AS densidad
+          FROM frasco f
+          JOIN lote l         ON l.id_lote = f.id_lote
+          JOIN presentacion p ON p.id_presentacion = l.id_presentacion
+          JOIN insumo i       ON i.id_insumo = p.id_insumo
+         WHERE f.id_frasco = %s
+        """,
+        (payload.id_frasco,),
+    ).fetchone()
+    if frasco is None:
+        raise ProblemException(
+            404,
+            "FRASCO_NO_EXISTE",
+            "Frasco inexistente",
+            f"No existe el frasco '{payload.id_frasco}'.",
+            field="id_frasco",
+        )
+
+    existe_investigador = connection.execute(
+        "SELECT 1 FROM investigador WHERE id_investigador = %s AND estado = 'ACTIVO'",
+        (payload.id_investigador,),
+    ).fetchone()
+    if existe_investigador is None:
+        raise ProblemException(
+            422,
+            "INVESTIGADOR_NO_EXISTE",
+            "Investigador inexistente",
+            "El investigador indicado no existe o está inactivo.",
+            field="id_investigador",
+        )
+
+    densidad = frasco["densidad"]
+    unidad = payload.unidad
+    cantidad = Decimal(payload.cantidad)
+
+    if unidad in FACTOR_A_GRAMOS:
+        cantidad_g = cantidad * FACTOR_A_GRAMOS[unidad]
+    else:
+        if densidad is None:
+            raise ProblemException(
+                422,
+                "DENSIDAD_REQUERIDA",
+                "Densidad requerida",
+                f"El frasco '{payload.id_frasco}' no tiene densidad: registre "
+                "el consumo en gramos o complete la densidad del lote.",
+                field="unidad",
+            )
+        cantidad_g = cantidad * FACTOR_A_ML[unidad] * Decimal(densidad)
+
+    cantidad_g = cantidad_g.quantize(Decimal("0.0001"))
+    if cantidad_g <= 0:
+        raise ProblemException(
+            422,
+            "VALIDACION",
+            "Cantidad inválida",
+            "La cantidad convertida a gramos debe ser mayor que cero.",
+            field="cantidad",
+        )
+
+    # El saldo lo mueve el trigger; aquí solo se inserta el hecho. Saldo
+    # insuficiente (US-12), custodia ajena (US-13) y saldo indeterminado los
+    # rechaza PostgreSQL y `_map_database_error` los traduce.
+    row = connection.execute(
+        """
+        INSERT INTO kardex (
+          id_frasco, tipo_movimiento, motivo, cantidad_g,
+          cantidad_registrada, unidad_registrada, densidad_aplicada,
+          id_investigador_origen, id_investigador_destinatario,
+          fecha_operacion, curso, usuario_final,
+          registrado_por, saldo_resultante_g
+        ) VALUES (
+          %s, 'SALIDA', 'consumo_laboratorio', %s,
+          %s, %s, %s,
+          %s, NULL,
+          COALESCE(%s, CURRENT_DATE), %s, %s,
+          %s, 0
+        )
+        RETURNING id_movimiento, id_frasco, cantidad_g, cantidad_kg,
+                  unidad_registrada, densidad_aplicada, peso_antes_g,
+                  saldo_resultante_g, fecha_hora
+        """,
+        (
+            payload.id_frasco,
+            cantidad_g,
+            cantidad,
+            unidad,
+            densidad,
+            payload.id_investigador,
+            payload.fecha_operacion,
+            payload.curso,
+            payload.usuario_final,
+            user.id_usuario,
+        ),
+    ).fetchone()
+
+    return ConsumoOut(
+        id_movimiento=row["id_movimiento"],
+        id_frasco=row["id_frasco"],
+        cantidad_g=row["cantidad_g"],
+        cantidad_kg=row["cantidad_kg"],
+        unidad_registrada=row["unidad_registrada"],
+        densidad_aplicada=row["densidad_aplicada"],
+        saldo_antes_g=row["peso_antes_g"],
+        saldo_despues_g=row["saldo_resultante_g"],
+        fecha_hora=row["fecha_hora"],
+    )
