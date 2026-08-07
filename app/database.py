@@ -34,3 +34,16 @@ class Database:
                     "SET LOCAL search_path TO iqbf, public, pg_catalog"
                 )
                 yield connection
+
+    @contextmanager
+    def connection_autocommit(self) -> Iterator[Connection]:
+        """Conexión que confirma por su cuenta, fuera de la transacción de la petición.
+
+        La hace falta para lo que debe persistir aunque la petición termine en
+        error: el contador de intentos de acceso fallidos, por ejemplo, se
+        anotaba dentro de la transacción que el propio rechazo revertía.
+        """
+        with self.pool.connection() as connection:
+            connection.execute("SET search_path TO iqbf, public, pg_catalog")
+            yield connection
+            connection.commit()

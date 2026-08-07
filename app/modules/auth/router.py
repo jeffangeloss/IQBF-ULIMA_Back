@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from ipaddress import ip_address
 from typing import Annotated
 from uuid import uuid4
@@ -6,7 +7,12 @@ from fastapi import APIRouter, Depends, Request, status
 from psycopg import Connection
 
 from app.config import Settings, get_settings
-from app.dependencies import get_connection, get_current_user
+from app.database import Database
+from app.dependencies import (
+    get_connection,
+    get_current_user,
+    get_database,
+)
 from app.errors import ProblemException
 from app.modules.auth.schemas import CurrentUser, LoginRequest, TokenResponse
 from app.security import create_access_token, verify_password
@@ -25,6 +31,7 @@ def login(
     payload: LoginRequest,
     request: Request,
     connection: Annotated[Connection, Depends(get_connection)],
+    database: Annotated[Database, Depends(get_database)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> TokenResponse:
     row = connection.execute(
@@ -47,6 +54,40 @@ def login(
         payload.password, row["contrasena"] if row else ""
     )
     if invalid:
+        # US-001 · Hasta ahora `intentos_fallidos` y `bloqueado_hasta` existían
+        # en el esquema y el login los LEÍA, pero nada los escribía nunca: la
+        # defensa contra adivinación era código muerto y se podían probar
+        # contraseñas a 23 por segundo indefinidamente.
+        #
+        # El bloqueo es temporal y el contador se reinicia con el primer acceso
+        # correcto, así que un tecleo torpe no deja fuera a nadie más de unos
+        # minutos. No se distingue «cuenta inexistente» de «clave incorrecta»:
+        # eso diría a un atacante qué correos existen.
+        if row is not None:
+            # El intento fallido tiene que SOBREVIVIR al rechazo. La conexión
+            # de la petición va dentro de una transacción que se revierte al
+            # lanzar el ProblemException: por eso el contador se anotaba y se
+            # perdía, y el bloqueo no llegaba nunca. Se usa una conexión propia
+            # del pool, que confirma por su cuenta.
+            with database.connection_autocommit() as registro:
+                registro.execute(
+                    """
+                    UPDATE usuario
+                       SET intentos_fallidos = intentos_fallidos + 1,
+                           bloqueado_hasta = CASE
+                             WHEN intentos_fallidos + 1 >= %s
+                               THEN now() + (%s || ' minutes')::interval
+                             ELSE bloqueado_hasta
+                           END,
+                           actualizado_en = now()
+                     WHERE id_usuario = %s
+                    """,
+                    (
+                        settings.max_intentos_fallidos,
+                        settings.bloqueo_minutos,
+                        row["id_usuario"],
+                    ),
+                )
         raise ProblemException(
             401,
             "CREDENCIALES_INVALIDAS",
@@ -60,7 +101,11 @@ def login(
             "Cuenta no disponible",
             "La cuenta está bloqueada o inactiva.",
         )
-    if row["bloqueado_hasta"] is not None:
+    # Un bloqueo es TEMPORAL: comparar contra NULL lo hacía permanente, y
+    # ningún endpoint limpia la columna. Se compara contra el instante actual.
+    if row["bloqueado_hasta"] is not None and row["bloqueado_hasta"] > datetime.now(
+        timezone.utc
+    ):
         raise ProblemException(
             403,
             "CUENTA_BLOQUEADA",
@@ -107,7 +152,7 @@ def login(
         """
         UPDATE usuario
            SET ultimo_acceso = now(), intentos_fallidos = 0,
-               actualizado_en = now()
+               bloqueado_hasta = NULL, actualizado_en = now()
          WHERE id_usuario = %s
         """,
         (row["id_usuario"],),

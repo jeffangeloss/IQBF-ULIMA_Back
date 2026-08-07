@@ -391,3 +391,119 @@ def test_inventario_confirma_el_saldo_sin_moverlo(
     # El saldo queda exactamente donde estaba: se confirma, no se mueve.
     assert (Decimal(cuerpo["saldo_resultante_g"])
             == Decimal(antes["peso_neto_actual_g"]))
+
+
+def test_cantidad_desmesurada_da_422_no_500(
+    client: TestClient, admin_headers, escenario
+):
+    """Un pegado mal hecho no puede acabar en «Error de base de datos».
+
+    `quantize` lanzaba InvalidOperation con números enormes y salía como HTTP
+    500 diciendo que había fallado la base — que ni se toca. El operario tiene
+    que leer qué hizo mal, no un error de servidor.
+    """
+    for cantidad in ("99999999999999999999", "1e30"):
+        respuesta = client.post(
+            "/api/movimientos/consumo",
+            headers=admin_headers,
+            json={
+                "id_frasco": "TEST-FRASCO-CON-TARA",
+                "cantidad": cantidad,
+                "unidad": "kg",
+                "id_investigador": escenario["alfa"],
+            },
+        )
+        assert respuesta.status_code == 422, f"{cantidad}: {respuesta.text}"
+        assert respuesta.json()["code"] == "VALIDACION"
+
+
+def test_un_insert_multifila_no_puede_dejar_saldo_negativo(
+    db_connection, escenario
+):
+    """El BEFORE ROW lee un saldo rancio dentro de una misma sentencia.
+
+    Dos SALIDAS de 3000 g en un solo INSERT sobre un frasco de 2950 g se
+    aceptaban enteras y el kardex quedaba sumando negativo. Ningún endpoint lo
+    dispara, pero la corrección de datos por SQL directo sí — y es justo donde
+    más falta hace la red.
+    """
+    import psycopg
+    saldo = db_connection.execute(
+        "SELECT peso_neto_actual_g FROM frasco WHERE id_frasco = 'TEST-FRASCO-CON-TARA'"
+    ).fetchone()["peso_neto_actual_g"]
+    # Cada fila cabe por separado; juntas no. Ese es el caso que se colaba:
+    # las dos leían el mismo saldo antes de que ninguna lo hubiera aplicado.
+    cada_una = (saldo * Decimal("0.6")).quantize(Decimal("0.0001"))
+    with pytest.raises(psycopg.errors.CheckViolation):
+        db_connection.execute(
+            """
+            INSERT INTO kardex (id_frasco, tipo_movimiento, motivo, cantidad_g,
+                                registrado_por, saldo_resultante_g)
+            VALUES ('TEST-FRASCO-CON-TARA', 'SALIDA', 'consumo_laboratorio',
+                    %(c)s, 1, 0),
+                   ('TEST-FRASCO-CON-TARA', 'SALIDA', 'consumo_laboratorio',
+                    %(c)s, 1, 0)
+            """,
+            {"c": cada_una},
+        )
+
+
+def test_no_se_dan_de_alta_frascos_sobre_una_presentacion_inactiva(
+    db_connection, escenario
+):
+    """US-011: inactivar impide nuevas altas también por SQL.
+
+    El cargador del censo inserta frascos por SQL directo, que es la vía real
+    de alta de este proyecto: si el guardián solo vive en la API, no guarda
+    nada.
+    """
+    import psycopg
+    # El cambio de estado de un maestro exige motivo (US-008/US-011).
+    db_connection.execute(
+        "SELECT set_config('iqbf.change_reason', 'Prueba de bloqueo de altas', false)"
+    )
+    db_connection.execute(
+        "UPDATE presentacion SET estado = 'INACTIVO' WHERE id_presentacion = 'TEST-HCL-P'"
+    )
+    lote = db_connection.execute(
+        "SELECT id_lote FROM lote WHERE numero_lote = 'LOTE-TEST-1'"
+    ).fetchone()["id_lote"]
+    with pytest.raises(psycopg.errors.CheckViolation):
+        db_connection.execute(
+            """
+            INSERT INTO frasco (id_frasco, id_lote, peso_bruto_g, tara_g,
+                                peso_neto_actual_g, estado)
+            VALUES ('TEST-ALTA-BLOQUEADA', %s, 100, 10, 0, 'EN_USO')
+            """,
+            (lote,),
+        )
+    db_connection.execute(
+        "SELECT set_config('iqbf.change_reason', 'Fin de la prueba', false)"
+    )
+    db_connection.execute(
+        "UPDATE presentacion SET estado = 'VIGENTE' WHERE id_presentacion = 'TEST-HCL-P'"
+    )
+
+
+def test_una_ubicacion_en_uso_no_se_puede_borrar(db_connection, escenario):
+    """US-004: el FK era ON DELETE SET NULL y borraba el vínculo en silencio."""
+    import psycopg
+    db_connection.execute(
+        """
+        INSERT INTO ubicacion (codigo, nombre, id_establecimiento)
+        SELECT 'UBI-BORRAR', 'Ubicación de prueba', id_establecimiento
+          FROM establecimiento ORDER BY id_establecimiento LIMIT 1
+        ON CONFLICT DO NOTHING
+        """
+    )
+    db_connection.execute(
+        """
+        UPDATE frasco SET id_ubicacion =
+          (SELECT id_ubicacion FROM ubicacion WHERE codigo = 'UBI-BORRAR')
+         WHERE id_frasco = 'TEST-FRASCO-CON-TARA'
+        """
+    )
+    with pytest.raises(psycopg.errors.ForeignKeyViolation):
+        db_connection.execute(
+            "DELETE FROM ubicacion WHERE codigo = 'UBI-BORRAR'"
+        )
