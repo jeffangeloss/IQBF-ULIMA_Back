@@ -14,6 +14,7 @@ from app.dependencies import get_connection
 from app.modules.auth.router import router as auth_router
 from app.modules.catalogs.router import router as catalogs_router
 from app.modules.insumos.router import router as insumos_router
+from app.modules.inventario.router import router as inventario_router
 from app.modules.users.router import router as users_router
 
 
@@ -35,6 +36,7 @@ ROUTERS = (
     auth_router,
     users_router,
     insumos_router,
+    inventario_router,
     catalogs_router,
     system_router,
 )
