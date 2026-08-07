@@ -211,12 +211,26 @@ def list_insumos(
                       OR normalizar_busqueda(
                            COALESCE(px.codigo_presentacion, '')
                          ) LIKE normalizar_busqueda(%s)
+                      -- El identificador de la presentación es lo que la gente
+                      -- lee en el frasco («IQF0102-112»); no encontrarlo era
+                      -- el caso más común de búsqueda fallida.
+                      OR normalizar_busqueda(px.id_presentacion)
+                         LIKE normalizar_busqueda(%s)
                     )
+             )
+             -- Y por el nombre con el que se pide de viva voz: «muriático»
+             -- tiene que llegar al ácido clorhídrico.
+             OR EXISTS (
+                 SELECT 1
+                   FROM insumo_alias ia
+                  WHERE ia.id_insumo = i.id_insumo
+                    AND normalizar_busqueda(ia.alias)
+                        LIKE normalizar_busqueda(%s)
              ))
             """
         )
         pattern = f"%{q}%"
-        params.extend([pattern, pattern, pattern, pattern])
+        params.extend([pattern] * 6)
     if estado != "TODOS":
         conditions.append("i.estado = %s")
         params.append(estado)
