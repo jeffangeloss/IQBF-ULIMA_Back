@@ -33,6 +33,8 @@ sys.path.insert(0, str(RAIZ_CENSO / "_CENSO_PIPELINE"))
 
 FECHA_CENSO = dt.date(2026, 8, 5)
 ESTABLECIMIENTO = "ULIMA-DOCIMASIA"
+# El almacén fiscalizado está en Docimasia: las ubicaciones cuelgan de ahí.
+LABORATORIO_DEL_ALMACEN = "Docimasia"
 
 # ─── Lista controlada de custodios (US-04) ───────────────────────────────────
 #
@@ -493,19 +495,34 @@ def emitir(datos, descartadas, reusar: bool = False) -> str:
     w("")
 
     w("-- ─── establecimiento y ubicaciones ────────────────────────────────")
-    w(f"INSERT INTO establecimiento (codigo, nombre) VALUES "
-      f"({sql(ESTABLECIMIENTO)}, {sql('Laboratorio de Docimasia — Universidad de Lima')})")
-    w("  ON CONFLICT (codigo) DO NOTHING;")
+    w("-- El establecimiento NO se crea: se usa el que ya exista. Crear uno")
+    w("-- propio dejaba las ubicaciones colgando de un establecimiento")
+    w("-- paralelo, invisible para toda cuenta con alcance de laboratorio.")
+    w("DO $$")
+    w("BEGIN")
+    w("  IF NOT EXISTS (SELECT 1 FROM establecimiento) THEN")
+    w(f"    INSERT INTO establecimiento (codigo, nombre) VALUES "
+      f"({sql(ESTABLECIMIENTO)}, "
+      f"{sql('Laboratorio de Docimasia — Universidad de Lima')});")
+    w("  END IF;")
+    w("END;")
+    w("$$;")
     w("")
     for u in sorted(datos["ubicaciones"], key=lambda x: x["codigo"]):
+        # La ubicación lleva laboratorio: el catálogo filtra por el alcance de
+        # la cuenta, y sin laboratorio no la ve nadie salvo alcance global.
         w("INSERT INTO ubicacion (codigo, nombre, id_establecimiento, "
-          "casillero, nombre_puerta, nivel, posicion)")
-        w(f"SELECT {sql(u['codigo'])}, {sql(u['nombre'])}, e.id_establecimiento, "
-          f"{sql(u['casillero'])}, {sql(u['puerta'])}, {sql(u['nivel'])}, "
+          "id_laboratorio, casillero, nombre_puerta, nivel, posicion)")
+        w(f"SELECT {sql(u['codigo'])}, {sql(u['nombre'])}, e.id_establecimiento,")
+        w(f"  (SELECT id_laboratorio FROM laboratorio WHERE nombre = "
+          f"{sql(LABORATORIO_DEL_ALMACEN)}),")
+        w(f"  {sql(u['casillero'])}, {sql(u['puerta'])}, {sql(u['nivel'])}, "
           f"{sql(u['posicion'])}")
-        w(f"  FROM establecimiento e WHERE e.codigo = {sql(ESTABLECIMIENTO)}")
+        w("  FROM establecimiento e ORDER BY e.id_establecimiento LIMIT 1")
         w("  ON CONFLICT (codigo) DO UPDATE SET")
         w("    nombre = EXCLUDED.nombre, casillero = EXCLUDED.casillero,")
+        w("    id_establecimiento = EXCLUDED.id_establecimiento,")
+        w("    id_laboratorio = EXCLUDED.id_laboratorio,")
         w("    nombre_puerta = EXCLUDED.nombre_puerta, nivel = EXCLUDED.nivel,")
         w("    posicion = EXCLUDED.posicion;")
     w("")

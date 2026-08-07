@@ -6841,6 +6841,10 @@
             ],
             "title": "Fraccion Llenado"
           },
+          "nominal_dudoso": {
+            "type": "boolean",
+            "title": "Nominal Dudoso"
+          },
           "volumen_actual_ml": {
             "anyOf": [
               {
@@ -7196,6 +7200,7 @@
           "peso_neto_actual_g",
           "saldo_indeterminado",
           "fraccion_llenado",
+          "nominal_dudoso",
           "volumen_actual_ml",
           "densidad_aplicable",
           "id_investigador",
@@ -7311,6 +7316,10 @@
               }
             ],
             "title": "Fraccion Llenado"
+          },
+          "nominal_dudoso": {
+            "type": "boolean",
+            "title": "Nominal Dudoso"
           },
           "volumen_actual_ml": {
             "anyOf": [
@@ -7482,6 +7491,7 @@
           "peso_neto_actual_g",
           "saldo_indeterminado",
           "fraccion_llenado",
+          "nominal_dudoso",
           "volumen_actual_ml",
           "densidad_aplicable",
           "id_investigador",
