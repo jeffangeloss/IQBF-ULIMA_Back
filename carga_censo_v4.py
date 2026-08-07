@@ -635,7 +635,8 @@ def emitir(datos, descartadas, reusar: bool = False) -> str:
         w(f"-- fila {f['fila_excel']} del censo")
         w("INSERT INTO frasco (id_frasco, id_lote, id_investigador, id_ubicacion,")
         w("  id_laboratorio_actual,")
-        w("  precision_ubicacion, peso_bruto_g, tara_g, peso_neto_actual_g,")
+        w("  precision_ubicacion, peso_bruto_g, tara_g, peso_neto_inicial_g,")
+        w("  peso_neto_actual_g,")
         w("  volumen_inicial_ml, fuente_tara, fecha_pesaje, condicion_envase,")
         w("  existe, estado, observaciones)")
         w(f"SELECT {sql(f['id'])}, l.id_lote,")
@@ -645,7 +646,7 @@ def emitir(datos, descartadas, reusar: bool = False) -> str:
         w(f"  (SELECT id_laboratorio FROM laboratorio WHERE nombre = "
           f"{sql(f['laboratorio'])}),")
         w(f"  {sql(f['precision_ubicacion'])}, {sql(f['peso_bruto_g'])}, "
-          f"{sql(f['tara_g'])}, 0,")
+          f"{sql(f['tara_g'])}, {sql(f['neto_g'])}, 0,")
         w(f"  {sql(f['volumen_ml'])}, {sql(f['fuente_tara'])}, "
           f"{sql(f['fecha_pesaje'])}, {sql(f['condicion_envase'])},")
         w(f"  TRUE, 'EN_USO', {sql(f['observaciones'])}")
@@ -659,6 +660,7 @@ def emitir(datos, descartadas, reusar: bool = False) -> str:
         w("                                     frasco.id_laboratorio_actual),")
         w("    peso_bruto_g = EXCLUDED.peso_bruto_g,")
         w("    tara_g = EXCLUDED.tara_g,")
+        w("    peso_neto_inicial_g = EXCLUDED.peso_neto_inicial_g,")
         w("    fuente_tara = EXCLUDED.fuente_tara,")
         w("    fecha_pesaje = EXCLUDED.fecha_pesaje,")
         w("    condicion_envase = EXCLUDED.condicion_envase;")
@@ -728,12 +730,17 @@ def emitir(datos, descartadas, reusar: bool = False) -> str:
     w("DO $$")
     w("DECLARE v_malos INTEGER;")
     w("BEGIN")
+    # El invariante es sobre el neto INICIAL, no sobre el saldo vivo: un frasco
+    # del que ya se consumio tiene, con razon, menos saldo que bruto-tara.
+    # Comprobar el saldo aqui abortaba cualquier recarga posterior al primer
+    # consumo.
     w("  SELECT count(*) INTO v_malos FROM frasco f")
     w("   WHERE f.peso_bruto_g IS NOT NULL AND f.tara_g IS NOT NULL")
-    w("     AND f.peso_neto_actual_g IS NOT NULL")
-    w("     AND abs(f.peso_neto_actual_g - (f.peso_bruto_g - f.tara_g)) > 0.05;")
+    w("     AND f.peso_neto_inicial_g IS NOT NULL")
+    w("     AND abs(f.peso_neto_inicial_g - (f.peso_bruto_g - f.tara_g)) > 0.05;")
     w("  IF v_malos > 0 THEN")
-    w("    RAISE EXCEPTION 'ABORTADA: % frascos con saldo != bruto-tara', v_malos;")
+    w("    RAISE EXCEPTION 'ABORTADA: % frascos cuyo neto inicial no es bruto-tara',")
+    w("      v_malos;")
     w("  END IF;")
     w("END;")
     w("$$;")
