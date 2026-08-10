@@ -27,6 +27,8 @@ from app.dependencies import get_connection, get_current_user
 from app.errors import ProblemException
 from app.modules.auth.schemas import CurrentUser
 from app.modules.inventario.schemas import (
+    AjusteCreate,
+    AjusteOut,
     ConsumoCreate,
     ConsumoOut,
     ConsumoPorPesada,
@@ -906,4 +908,97 @@ def registrar_transferencia(
         laboratorio_nuevo=laboratorio_nuevo or frasco["laboratorio_anterior"],
         fecha_hora=fila["fecha_hora"],
     )
+
+
+@router.post(
+    "/movimientos/ajuste",
+    response_model=AjusteOut,
+    status_code=status.HTTP_201_CREATED,
+    summary="Registrar una merma, corrección o ajuste de inventario (US-031)",
+)
+def registrar_ajuste(
+    payload: AjusteCreate,
+    connection: Annotated[Connection, Depends(get_connection)],
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+) -> AjusteOut:
+    """US-031. Registrar mermas, correcciones o ajustes sobre el saldo de un frasco.
+
+    Todo ajuste exige observaciones justificativas. El saldo se recalcula
+    automáticamente vía trigger según el tipo de movimiento:
+      - ENTRADA: suma a saldo
+      - SALIDA: resta a saldo (requerido para mermas)
+      - AJUSTE: movimiento de inventario / regularización
+    """
+    frasco = connection.execute(
+        """
+        SELECT f.id_frasco, f.estado, f.peso_neto_actual_g, f.tara_g, f.id_investigador
+          FROM frasco f
+         WHERE f.id_frasco = %s
+        """,
+        (payload.id_frasco,),
+    ).fetchone()
+    if frasco is None:
+        raise ProblemException(
+            404, "FRASCO_NO_EXISTE", "Frasco inexistente",
+            f"No existe el frasco '{payload.id_frasco}'.", field="id_frasco",
+        )
+    if frasco["estado"] == "DADO_DE_BAJA":
+        raise ProblemException(
+            409, "REGLA_NEGOCIO", "Frasco dado de baja",
+            f"El frasco {payload.id_frasco} está dado de baja.", field="id_frasco",
+        )
+
+    if payload.motivo == "merma" and payload.tipo_movimiento != "SALIDA":
+        raise ProblemException(
+            422, "VALIDACION", "Tipo de movimiento incoherente",
+            "Una merma debe ser un movimiento de tipo SALIDA.", field="tipo_movimiento",
+        )
+
+    cantidad_g = Decimal(payload.cantidad_g)
+    saldo_antes = frasco["peso_neto_actual_g"] or Decimal(0)
+
+    bruto_antes = None
+    bruto_despues = None
+    if frasco["tara_g"] is not None and frasco["peso_neto_actual_g"] is not None:
+        bruto_antes = Decimal(frasco["peso_neto_actual_g"]) + Decimal(frasco["tara_g"])
+        if payload.bruto_observado_g is not None:
+            bruto_despues = Decimal(payload.bruto_observado_g)
+        else:
+            v_signo = 1 if payload.tipo_movimiento == "ENTRADA" else (-1 if payload.tipo_movimiento == "SALIDA" else 0)
+            bruto_despues = bruto_antes + (v_signo * cantidad_g)
+
+    id_inv = payload.id_investigador or frasco["id_investigador"]
+
+    fila = connection.execute(
+        """
+        INSERT INTO kardex (
+          id_frasco, tipo_movimiento, motivo, cantidad_g, cantidad_registrada, unidad_registrada,
+          bruto_antes_g, bruto_despues_g, peso_antes_g,
+          id_investigador_origen, fecha_operacion, curso, registrado_por, saldo_resultante_g
+        ) VALUES (
+          %s, %s, %s, %s, %s, 'g',
+          %s, %s, %s,
+          %s, COALESCE(%s, CURRENT_DATE), %s, %s, 0
+        )
+        RETURNING id_movimiento, tipo_movimiento, motivo, cantidad_g, peso_antes_g, saldo_resultante_g, fecha_hora
+        """,
+        (
+            payload.id_frasco, payload.tipo_movimiento, payload.motivo, cantidad_g, cantidad_g,
+            bruto_antes, bruto_despues, saldo_antes,
+            id_inv, payload.fecha_operacion, payload.observaciones.strip(), user.id_usuario,
+        ),
+    ).fetchone()
+
+    return AjusteOut(
+        id_movimiento=fila["id_movimiento"],
+        id_frasco=payload.id_frasco,
+        tipo_movimiento=fila["tipo_movimiento"],
+        motivo=fila["motivo"],
+        cantidad_g=fila["cantidad_g"],
+        saldo_antes_g=fila["peso_antes_g"] or Decimal(0),
+        saldo_resultante_g=fila["saldo_resultante_g"],
+        fecha_hora=fila["fecha_hora"],
+        registrado_por=user.nombre,
+    )
+
 

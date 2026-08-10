@@ -235,3 +235,33 @@ class TransferenciaOut(ApiModel):
     laboratorio_nuevo: str | None
     fecha_hora: datetime
 
+
+MotivoAjuste = Literal["merma", "ajuste_inventario", "correccion"]
+TipoMovimientoAjuste = Literal["ENTRADA", "SALIDA", "AJUSTE"]
+
+
+class AjusteCreate(ApiModel):
+    """US-031 — Registro de mermas, correcciones y ajustes de inventario por balanza."""
+
+    id_frasco: str = Field(max_length=40)
+    tipo_movimiento: TipoMovimientoAjuste
+    motivo: MotivoAjuste
+    cantidad_g: DecimalString = Field(ge=0)
+    bruto_observado_g: DecimalString | None = None
+    id_investigador: int | None = None
+    observaciones: str = Field(min_length=3, max_length=255)
+    fecha_operacion: date | None = None
+
+
+class AjusteOut(ApiModel):
+    id_movimiento: int
+    id_frasco: str
+    tipo_movimiento: str
+    motivo: str
+    cantidad_g: DecimalString
+    saldo_antes_g: DecimalString
+    saldo_resultante_g: DecimalString
+    fecha_hora: datetime
+    registrado_por: str | None
+
+
