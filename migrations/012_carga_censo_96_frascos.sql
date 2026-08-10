@@ -948,14 +948,6 @@ INSERT INTO investigador (nombre, tipo, id_laboratorio)
 SELECT 'Sanabria', 'PERSONA', (SELECT id_laboratorio FROM laboratorio WHERE nombre = 'Docimasia')
 WHERE NOT EXISTS (SELECT 1 FROM investigador WHERE nombre IN ('Sanabria'));
 -- PROVISIONAL · Silvia Ponce: sin laboratorio en ninguno de sus frascos; se le adscribe «Docimasia» por ser el almacén donde están. CONFIRMAR.
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM investigador) THEN
-    INSERT INTO investigador (nombres, apellidos, correo_ulima, rol)
-    VALUES ('Administrador', 'Sistema IQBF', 'admin@aloe.ulima.edu.pe', 'ADMINISTRADOR');
-  END IF;
-END;
-$$;
 INSERT INTO investigador (nombre, tipo, id_laboratorio)
 SELECT 'Silvia Ponce', 'PERSONA', (SELECT id_laboratorio FROM laboratorio WHERE nombre = 'Docimasia')
 WHERE NOT EXISTS (SELECT 1 FROM investigador WHERE nombre IN ('Silvia Ponce'));
@@ -1087,6 +1079,7 @@ VALUES ('IQF1123', 'Carbonato De Potasio', 'SOLIDO', 'g', FALSE, 'VIGENTE')
     densidad_variable = EXCLUDED.densidad_variable;
 
 -- ─── presentaciones ───────────────────────────────────────────────
+DELETE FROM presentacion WHERE normalizar_busqueda(codigo_bf_sunat) = normalizar_busqueda('000111') AND id_presentacion <> 'IQF0102-111';
 INSERT INTO presentacion (id_presentacion, id_insumo, codigo_bf_sunat,
   codigo_presentacion, concentracion, capacidad, unidad, tipo_envase,
   equivalencia_g, densidad, vigencia_desde, estado)
@@ -1097,6 +1090,7 @@ VALUES ('IQF0102-111', 'IQF0102', '000111', '111',
     codigo_bf_sunat = EXCLUDED.codigo_bf_sunat,
     equivalencia_g = EXCLUDED.equivalencia_g,
     densidad = EXCLUDED.densidad;
+DELETE FROM presentacion WHERE normalizar_busqueda(codigo_bf_sunat) = normalizar_busqueda('000112') AND id_presentacion <> 'IQF0102-112';
 INSERT INTO presentacion (id_presentacion, id_insumo, codigo_bf_sunat,
   codigo_presentacion, concentracion, capacidad, unidad, tipo_envase,
   equivalencia_g, densidad, vigencia_desde, estado)
@@ -1107,6 +1101,7 @@ VALUES ('IQF0102-112', 'IQF0102', '000112', '112',
     codigo_bf_sunat = EXCLUDED.codigo_bf_sunat,
     equivalencia_g = EXCLUDED.equivalencia_g,
     densidad = EXCLUDED.densidad;
+DELETE FROM presentacion WHERE normalizar_busqueda(codigo_bf_sunat) = normalizar_busqueda('000115') AND id_presentacion <> 'IQF0102-115';
 INSERT INTO presentacion (id_presentacion, id_insumo, codigo_bf_sunat,
   codigo_presentacion, concentracion, capacidad, unidad, tipo_envase,
   equivalencia_g, densidad, vigencia_desde, estado)
@@ -1117,6 +1112,7 @@ VALUES ('IQF0102-115', 'IQF0102', '000115', '115',
     codigo_bf_sunat = EXCLUDED.codigo_bf_sunat,
     equivalencia_g = EXCLUDED.equivalencia_g,
     densidad = EXCLUDED.densidad;
+DELETE FROM presentacion WHERE normalizar_busqueda(codigo_bf_sunat) = normalizar_busqueda('000123') AND id_presentacion <> 'IQF0102-123';
 INSERT INTO presentacion (id_presentacion, id_insumo, codigo_bf_sunat,
   codigo_presentacion, concentracion, capacidad, unidad, tipo_envase,
   equivalencia_g, densidad, vigencia_desde, estado)
@@ -1127,6 +1123,7 @@ VALUES ('IQF0102-123', 'IQF0102', '000123', '123',
     codigo_bf_sunat = EXCLUDED.codigo_bf_sunat,
     equivalencia_g = EXCLUDED.equivalencia_g,
     densidad = EXCLUDED.densidad;
+DELETE FROM presentacion WHERE normalizar_busqueda(codigo_bf_sunat) = normalizar_busqueda('000137') AND id_presentacion <> 'IQF0102-137';
 INSERT INTO presentacion (id_presentacion, id_insumo, codigo_bf_sunat,
   codigo_presentacion, concentracion, capacidad, unidad, tipo_envase,
   equivalencia_g, densidad, vigencia_desde, estado)
@@ -1137,6 +1134,7 @@ VALUES ('IQF0102-137', 'IQF0102', '000137', '137',
     codigo_bf_sunat = EXCLUDED.codigo_bf_sunat,
     equivalencia_g = EXCLUDED.equivalencia_g,
     densidad = EXCLUDED.densidad;
+DELETE FROM presentacion WHERE normalizar_busqueda(codigo_bf_sunat) = normalizar_busqueda('000069') AND id_presentacion <> 'IQF0102-69';
 INSERT INTO presentacion (id_presentacion, id_insumo, codigo_bf_sunat,
   codigo_presentacion, concentracion, capacidad, unidad, tipo_envase,
   equivalencia_g, densidad, vigencia_desde, estado)
@@ -1147,6 +1145,7 @@ VALUES ('IQF0102-69', 'IQF0102', '000069', '69',
     codigo_bf_sunat = EXCLUDED.codigo_bf_sunat,
     equivalencia_g = EXCLUDED.equivalencia_g,
     densidad = EXCLUDED.densidad;
+DELETE FROM presentacion WHERE normalizar_busqueda(codigo_bf_sunat) = normalizar_busqueda('000116') AND id_presentacion <> 'IQF0106-116';
 INSERT INTO presentacion (id_presentacion, id_insumo, codigo_bf_sunat,
   codigo_presentacion, concentracion, capacidad, unidad, tipo_envase,
   equivalencia_g, densidad, vigencia_desde, estado)
@@ -1157,6 +1156,7 @@ VALUES ('IQF0106-116', 'IQF0106', '000116', '116',
     codigo_bf_sunat = EXCLUDED.codigo_bf_sunat,
     equivalencia_g = EXCLUDED.equivalencia_g,
     densidad = EXCLUDED.densidad;
+DELETE FROM presentacion WHERE normalizar_busqueda(codigo_bf_sunat) = normalizar_busqueda('000122') AND id_presentacion <> 'IQF0106-122';
 INSERT INTO presentacion (id_presentacion, id_insumo, codigo_bf_sunat,
   codigo_presentacion, concentracion, capacidad, unidad, tipo_envase,
   equivalencia_g, densidad, vigencia_desde, estado)
@@ -1177,6 +1177,7 @@ VALUES ('IQF0106-124', 'IQF0106', NULL, '124',
     codigo_bf_sunat = EXCLUDED.codigo_bf_sunat,
     equivalencia_g = EXCLUDED.equivalencia_g,
     densidad = EXCLUDED.densidad;
+DELETE FROM presentacion WHERE normalizar_busqueda(codigo_bf_sunat) = normalizar_busqueda('000134') AND id_presentacion <> 'IQF0106-134';
 INSERT INTO presentacion (id_presentacion, id_insumo, codigo_bf_sunat,
   codigo_presentacion, concentracion, capacidad, unidad, tipo_envase,
   equivalencia_g, densidad, vigencia_desde, estado)
@@ -1187,6 +1188,7 @@ VALUES ('IQF0106-134', 'IQF0106', '000134', '134',
     codigo_bf_sunat = EXCLUDED.codigo_bf_sunat,
     equivalencia_g = EXCLUDED.equivalencia_g,
     densidad = EXCLUDED.densidad;
+DELETE FROM presentacion WHERE normalizar_busqueda(codigo_bf_sunat) = normalizar_busqueda('000084') AND id_presentacion <> 'IQF0108-084';
 INSERT INTO presentacion (id_presentacion, id_insumo, codigo_bf_sunat,
   codigo_presentacion, concentracion, capacidad, unidad, tipo_envase,
   equivalencia_g, densidad, vigencia_desde, estado)
@@ -1197,6 +1199,7 @@ VALUES ('IQF0108-084', 'IQF0108', '000084', '084',
     codigo_bf_sunat = EXCLUDED.codigo_bf_sunat,
     equivalencia_g = EXCLUDED.equivalencia_g,
     densidad = EXCLUDED.densidad;
+DELETE FROM presentacion WHERE normalizar_busqueda(codigo_bf_sunat) = normalizar_busqueda('000104') AND id_presentacion <> 'IQF0108-104';
 INSERT INTO presentacion (id_presentacion, id_insumo, codigo_bf_sunat,
   codigo_presentacion, concentracion, capacidad, unidad, tipo_envase,
   equivalencia_g, densidad, vigencia_desde, estado)
@@ -1207,6 +1210,7 @@ VALUES ('IQF0108-104', 'IQF0108', '000104', '104',
     codigo_bf_sunat = EXCLUDED.codigo_bf_sunat,
     equivalencia_g = EXCLUDED.equivalencia_g,
     densidad = EXCLUDED.densidad;
+DELETE FROM presentacion WHERE normalizar_busqueda(codigo_bf_sunat) = normalizar_busqueda('000120') AND id_presentacion <> 'IQF0108-120';
 INSERT INTO presentacion (id_presentacion, id_insumo, codigo_bf_sunat,
   codigo_presentacion, concentracion, capacidad, unidad, tipo_envase,
   equivalencia_g, densidad, vigencia_desde, estado)
@@ -1217,6 +1221,7 @@ VALUES ('IQF0108-120', 'IQF0108', '000120', '120',
     codigo_bf_sunat = EXCLUDED.codigo_bf_sunat,
     equivalencia_g = EXCLUDED.equivalencia_g,
     densidad = EXCLUDED.densidad;
+DELETE FROM presentacion WHERE normalizar_busqueda(codigo_bf_sunat) = normalizar_busqueda('000129') AND id_presentacion <> 'IQF0108-129';
 INSERT INTO presentacion (id_presentacion, id_insumo, codigo_bf_sunat,
   codigo_presentacion, concentracion, capacidad, unidad, tipo_envase,
   equivalencia_g, densidad, vigencia_desde, estado)
@@ -1227,6 +1232,7 @@ VALUES ('IQF0108-129', 'IQF0108', '000129', '129',
     codigo_bf_sunat = EXCLUDED.codigo_bf_sunat,
     equivalencia_g = EXCLUDED.equivalencia_g,
     densidad = EXCLUDED.densidad;
+DELETE FROM presentacion WHERE normalizar_busqueda(codigo_bf_sunat) = normalizar_busqueda('000019') AND id_presentacion <> 'IQF0213-19';
 INSERT INTO presentacion (id_presentacion, id_insumo, codigo_bf_sunat,
   codigo_presentacion, concentracion, capacidad, unidad, tipo_envase,
   equivalencia_g, densidad, vigencia_desde, estado)
@@ -1237,6 +1243,7 @@ VALUES ('IQF0213-19', 'IQF0213', '000019', '19',
     codigo_bf_sunat = EXCLUDED.codigo_bf_sunat,
     equivalencia_g = EXCLUDED.equivalencia_g,
     densidad = EXCLUDED.densidad;
+DELETE FROM presentacion WHERE normalizar_busqueda(codigo_bf_sunat) = normalizar_busqueda('000020') AND id_presentacion <> 'IQF0213-20';
 INSERT INTO presentacion (id_presentacion, id_insumo, codigo_bf_sunat,
   codigo_presentacion, concentracion, capacidad, unidad, tipo_envase,
   equivalencia_g, densidad, vigencia_desde, estado)
@@ -1297,6 +1304,7 @@ VALUES ('IQF0308-4L', 'IQF0308', NULL, 'IQF0308-4L',
     codigo_bf_sunat = EXCLUDED.codigo_bf_sunat,
     equivalencia_g = EXCLUDED.equivalencia_g,
     densidad = EXCLUDED.densidad;
+DELETE FROM presentacion WHERE normalizar_busqueda(codigo_bf_sunat) = normalizar_busqueda('000106') AND id_presentacion <> 'IQF0401-106';
 INSERT INTO presentacion (id_presentacion, id_insumo, codigo_bf_sunat,
   codigo_presentacion, concentracion, capacidad, unidad, tipo_envase,
   equivalencia_g, densidad, vigencia_desde, estado)
@@ -1307,6 +1315,7 @@ VALUES ('IQF0401-106', 'IQF0401', '000106', '106',
     codigo_bf_sunat = EXCLUDED.codigo_bf_sunat,
     equivalencia_g = EXCLUDED.equivalencia_g,
     densidad = EXCLUDED.densidad;
+DELETE FROM presentacion WHERE normalizar_busqueda(codigo_bf_sunat) = normalizar_busqueda('000125') AND id_presentacion <> 'IQF0401-125';
 INSERT INTO presentacion (id_presentacion, id_insumo, codigo_bf_sunat,
   codigo_presentacion, concentracion, capacidad, unidad, tipo_envase,
   equivalencia_g, densidad, vigencia_desde, estado)
@@ -1317,6 +1326,7 @@ VALUES ('IQF0401-125', 'IQF0401', '000125', '125',
     codigo_bf_sunat = EXCLUDED.codigo_bf_sunat,
     equivalencia_g = EXCLUDED.equivalencia_g,
     densidad = EXCLUDED.densidad;
+DELETE FROM presentacion WHERE normalizar_busqueda(codigo_bf_sunat) = normalizar_busqueda('000003') AND id_presentacion <> 'IQF0408-03';
 INSERT INTO presentacion (id_presentacion, id_insumo, codigo_bf_sunat,
   codigo_presentacion, concentracion, capacidad, unidad, tipo_envase,
   equivalencia_g, densidad, vigencia_desde, estado)
@@ -1327,6 +1337,7 @@ VALUES ('IQF0408-03', 'IQF0408', '000003', '03',
     codigo_bf_sunat = EXCLUDED.codigo_bf_sunat,
     equivalencia_g = EXCLUDED.equivalencia_g,
     densidad = EXCLUDED.densidad;
+DELETE FROM presentacion WHERE normalizar_busqueda(codigo_bf_sunat) = normalizar_busqueda('000004') AND id_presentacion <> 'IQF0408-04';
 INSERT INTO presentacion (id_presentacion, id_insumo, codigo_bf_sunat,
   codigo_presentacion, concentracion, capacidad, unidad, tipo_envase,
   equivalencia_g, densidad, vigencia_desde, estado)
@@ -1337,6 +1348,7 @@ VALUES ('IQF0408-04', 'IQF0408', '000004', '04',
     codigo_bf_sunat = EXCLUDED.codigo_bf_sunat,
     equivalencia_g = EXCLUDED.equivalencia_g,
     densidad = EXCLUDED.densidad;
+DELETE FROM presentacion WHERE normalizar_busqueda(codigo_bf_sunat) = normalizar_busqueda('000100') AND id_presentacion <> 'IQF0501-100';
 INSERT INTO presentacion (id_presentacion, id_insumo, codigo_bf_sunat,
   codigo_presentacion, concentracion, capacidad, unidad, tipo_envase,
   equivalencia_g, densidad, vigencia_desde, estado)
@@ -1347,6 +1359,7 @@ VALUES ('IQF0501-100', 'IQF0501', '000100', '100',
     codigo_bf_sunat = EXCLUDED.codigo_bf_sunat,
     equivalencia_g = EXCLUDED.equivalencia_g,
     densidad = EXCLUDED.densidad;
+DELETE FROM presentacion WHERE normalizar_busqueda(codigo_bf_sunat) = normalizar_busqueda('000033') AND id_presentacion <> 'IQF0501-33';
 INSERT INTO presentacion (id_presentacion, id_insumo, codigo_bf_sunat,
   codigo_presentacion, concentracion, capacidad, unidad, tipo_envase,
   equivalencia_g, densidad, vigencia_desde, estado)
@@ -1357,6 +1370,7 @@ VALUES ('IQF0501-33', 'IQF0501', '000033', '33',
     codigo_bf_sunat = EXCLUDED.codigo_bf_sunat,
     equivalencia_g = EXCLUDED.equivalencia_g,
     densidad = EXCLUDED.densidad;
+DELETE FROM presentacion WHERE normalizar_busqueda(codigo_bf_sunat) = normalizar_busqueda('000090') AND id_presentacion <> 'IQF0501-90';
 INSERT INTO presentacion (id_presentacion, id_insumo, codigo_bf_sunat,
   codigo_presentacion, concentracion, capacidad, unidad, tipo_envase,
   equivalencia_g, densidad, vigencia_desde, estado)
@@ -1367,6 +1381,7 @@ VALUES ('IQF0501-90', 'IQF0501', '000090', '90',
     codigo_bf_sunat = EXCLUDED.codigo_bf_sunat,
     equivalencia_g = EXCLUDED.equivalencia_g,
     densidad = EXCLUDED.densidad;
+DELETE FROM presentacion WHERE normalizar_busqueda(codigo_bf_sunat) = normalizar_busqueda('000035') AND id_presentacion <> 'IQF0502-35';
 INSERT INTO presentacion (id_presentacion, id_insumo, codigo_bf_sunat,
   codigo_presentacion, concentracion, capacidad, unidad, tipo_envase,
   equivalencia_g, densidad, vigencia_desde, estado)
@@ -1377,6 +1392,7 @@ VALUES ('IQF0502-35', 'IQF0502', '000035', '35',
     codigo_bf_sunat = EXCLUDED.codigo_bf_sunat,
     equivalencia_g = EXCLUDED.equivalencia_g,
     densidad = EXCLUDED.densidad;
+DELETE FROM presentacion WHERE normalizar_busqueda(codigo_bf_sunat) = normalizar_busqueda('000036') AND id_presentacion <> 'IQF0502-36';
 INSERT INTO presentacion (id_presentacion, id_insumo, codigo_bf_sunat,
   codigo_presentacion, concentracion, capacidad, unidad, tipo_envase,
   equivalencia_g, densidad, vigencia_desde, estado)
@@ -1387,6 +1403,7 @@ VALUES ('IQF0502-36', 'IQF0502', '000036', '36',
     codigo_bf_sunat = EXCLUDED.codigo_bf_sunat,
     equivalencia_g = EXCLUDED.equivalencia_g,
     densidad = EXCLUDED.densidad;
+DELETE FROM presentacion WHERE normalizar_busqueda(codigo_bf_sunat) = normalizar_busqueda('000098') AND id_presentacion <> 'IQF0605-098';
 INSERT INTO presentacion (id_presentacion, id_insumo, codigo_bf_sunat,
   codigo_presentacion, concentracion, capacidad, unidad, tipo_envase,
   equivalencia_g, densidad, vigencia_desde, estado)
@@ -1397,6 +1414,7 @@ VALUES ('IQF0605-098', 'IQF0605', '000098', '098',
     codigo_bf_sunat = EXCLUDED.codigo_bf_sunat,
     equivalencia_g = EXCLUDED.equivalencia_g,
     densidad = EXCLUDED.densidad;
+DELETE FROM presentacion WHERE normalizar_busqueda(codigo_bf_sunat) = normalizar_busqueda('000132') AND id_presentacion <> 'IQF0605-132';
 INSERT INTO presentacion (id_presentacion, id_insumo, codigo_bf_sunat,
   codigo_presentacion, concentracion, capacidad, unidad, tipo_envase,
   equivalencia_g, densidad, vigencia_desde, estado)
@@ -1407,6 +1425,7 @@ VALUES ('IQF0605-132', 'IQF0605', '000132', '132',
     codigo_bf_sunat = EXCLUDED.codigo_bf_sunat,
     equivalencia_g = EXCLUDED.equivalencia_g,
     densidad = EXCLUDED.densidad;
+DELETE FROM presentacion WHERE normalizar_busqueda(codigo_bf_sunat) = normalizar_busqueda('000053') AND id_presentacion <> 'IQF0612-53';
 INSERT INTO presentacion (id_presentacion, id_insumo, codigo_bf_sunat,
   codigo_presentacion, concentracion, capacidad, unidad, tipo_envase,
   equivalencia_g, densidad, vigencia_desde, estado)
@@ -1417,6 +1436,7 @@ VALUES ('IQF0612-53', 'IQF0612', '000053', '53',
     codigo_bf_sunat = EXCLUDED.codigo_bf_sunat,
     equivalencia_g = EXCLUDED.equivalencia_g,
     densidad = EXCLUDED.densidad;
+DELETE FROM presentacion WHERE normalizar_busqueda(codigo_bf_sunat) = normalizar_busqueda('000126') AND id_presentacion <> 'IQF0613-126';
 INSERT INTO presentacion (id_presentacion, id_insumo, codigo_bf_sunat,
   codigo_presentacion, concentracion, capacidad, unidad, tipo_envase,
   equivalencia_g, densidad, vigencia_desde, estado)
@@ -1427,6 +1447,7 @@ VALUES ('IQF0613-126', 'IQF0613', '000126', '126',
     codigo_bf_sunat = EXCLUDED.codigo_bf_sunat,
     equivalencia_g = EXCLUDED.equivalencia_g,
     densidad = EXCLUDED.densidad;
+DELETE FROM presentacion WHERE normalizar_busqueda(codigo_bf_sunat) = normalizar_busqueda('000105') AND id_presentacion <> 'IQF0702-105';
 INSERT INTO presentacion (id_presentacion, id_insumo, codigo_bf_sunat,
   codigo_presentacion, concentracion, capacidad, unidad, tipo_envase,
   equivalencia_g, densidad, vigencia_desde, estado)
@@ -1437,6 +1458,7 @@ VALUES ('IQF0702-105', 'IQF0702', '000105', '105',
     codigo_bf_sunat = EXCLUDED.codigo_bf_sunat,
     equivalencia_g = EXCLUDED.equivalencia_g,
     densidad = EXCLUDED.densidad;
+DELETE FROM presentacion WHERE normalizar_busqueda(codigo_bf_sunat) = normalizar_busqueda('000094') AND id_presentacion <> 'IQF0702-94';
 INSERT INTO presentacion (id_presentacion, id_insumo, codigo_bf_sunat,
   codigo_presentacion, concentracion, capacidad, unidad, tipo_envase,
   equivalencia_g, densidad, vigencia_desde, estado)
@@ -1447,6 +1469,7 @@ VALUES ('IQF0702-94', 'IQF0702', '000094', '94',
     codigo_bf_sunat = EXCLUDED.codigo_bf_sunat,
     equivalencia_g = EXCLUDED.equivalencia_g,
     densidad = EXCLUDED.densidad;
+DELETE FROM presentacion WHERE normalizar_busqueda(codigo_bf_sunat) = normalizar_busqueda('000119') AND id_presentacion <> 'IQF0708-119';
 INSERT INTO presentacion (id_presentacion, id_insumo, codigo_bf_sunat,
   codigo_presentacion, concentracion, capacidad, unidad, tipo_envase,
   equivalencia_g, densidad, vigencia_desde, estado)
@@ -1457,6 +1480,7 @@ VALUES ('IQF0708-119', 'IQF0708', '000119', '119',
     codigo_bf_sunat = EXCLUDED.codigo_bf_sunat,
     equivalencia_g = EXCLUDED.equivalencia_g,
     densidad = EXCLUDED.densidad;
+DELETE FROM presentacion WHERE normalizar_busqueda(codigo_bf_sunat) = normalizar_busqueda('000054') AND id_presentacion <> 'IQF0904-54';
 INSERT INTO presentacion (id_presentacion, id_insumo, codigo_bf_sunat,
   codigo_presentacion, concentracion, capacidad, unidad, tipo_envase,
   equivalencia_g, densidad, vigencia_desde, estado)
@@ -1467,6 +1491,7 @@ VALUES ('IQF0904-54', 'IQF0904', '000054', '54',
     codigo_bf_sunat = EXCLUDED.codigo_bf_sunat,
     equivalencia_g = EXCLUDED.equivalencia_g,
     densidad = EXCLUDED.densidad;
+DELETE FROM presentacion WHERE normalizar_busqueda(codigo_bf_sunat) = normalizar_busqueda('000114') AND id_presentacion <> 'IQF1122-114';
 INSERT INTO presentacion (id_presentacion, id_insumo, codigo_bf_sunat,
   codigo_presentacion, concentracion, capacidad, unidad, tipo_envase,
   equivalencia_g, densidad, vigencia_desde, estado)
@@ -1477,6 +1502,7 @@ VALUES ('IQF1122-114', 'IQF1122', '000114', '114',
     codigo_bf_sunat = EXCLUDED.codigo_bf_sunat,
     equivalencia_g = EXCLUDED.equivalencia_g,
     densidad = EXCLUDED.densidad;
+DELETE FROM presentacion WHERE normalizar_busqueda(codigo_bf_sunat) = normalizar_busqueda('000130') AND id_presentacion <> 'IQF1122-130';
 INSERT INTO presentacion (id_presentacion, id_insumo, codigo_bf_sunat,
   codigo_presentacion, concentracion, capacidad, unidad, tipo_envase,
   equivalencia_g, densidad, vigencia_desde, estado)
@@ -1487,6 +1513,7 @@ VALUES ('IQF1122-130', 'IQF1122', '000130', '130',
     codigo_bf_sunat = EXCLUDED.codigo_bf_sunat,
     equivalencia_g = EXCLUDED.equivalencia_g,
     densidad = EXCLUDED.densidad;
+DELETE FROM presentacion WHERE normalizar_busqueda(codigo_bf_sunat) = normalizar_busqueda('000133') AND id_presentacion <> 'IQF1122-133';
 INSERT INTO presentacion (id_presentacion, id_insumo, codigo_bf_sunat,
   codigo_presentacion, concentracion, capacidad, unidad, tipo_envase,
   equivalencia_g, densidad, vigencia_desde, estado)
@@ -1497,6 +1524,7 @@ VALUES ('IQF1122-133', 'IQF1122', '000133', '133',
     codigo_bf_sunat = EXCLUDED.codigo_bf_sunat,
     equivalencia_g = EXCLUDED.equivalencia_g,
     densidad = EXCLUDED.densidad;
+DELETE FROM presentacion WHERE normalizar_busqueda(codigo_bf_sunat) = normalizar_busqueda('000095') AND id_presentacion <> 'IQF1122-95';
 INSERT INTO presentacion (id_presentacion, id_insumo, codigo_bf_sunat,
   codigo_presentacion, concentracion, capacidad, unidad, tipo_envase,
   equivalencia_g, densidad, vigencia_desde, estado)
@@ -1507,6 +1535,7 @@ VALUES ('IQF1122-95', 'IQF1122', '000095', '95',
     codigo_bf_sunat = EXCLUDED.codigo_bf_sunat,
     equivalencia_g = EXCLUDED.equivalencia_g,
     densidad = EXCLUDED.densidad;
+DELETE FROM presentacion WHERE normalizar_busqueda(codigo_bf_sunat) = normalizar_busqueda('000027') AND id_presentacion <> 'IQF1123-27';
 INSERT INTO presentacion (id_presentacion, id_insumo, codigo_bf_sunat,
   codigo_presentacion, concentracion, capacidad, unidad, tipo_envase,
   equivalencia_g, densidad, vigencia_desde, estado)

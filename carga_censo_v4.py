@@ -935,7 +935,10 @@ def emitir(datos, descartadas, reusar: bool = False) -> str:
 
         w("-- ─── presentaciones ───────────────────────────────────────────────")
         for p in sorted(datos["presentaciones"], key=lambda x: x["id"]):
+            if p["codigo_bf_sunat"]:
+                w(f"DELETE FROM presentacion WHERE normalizar_busqueda(codigo_bf_sunat) = normalizar_busqueda({sql(p['codigo_bf_sunat'])}) AND id_presentacion <> {sql(p['id'])};")
             w("INSERT INTO presentacion (id_presentacion, id_insumo, codigo_bf_sunat,")
+
             w("  codigo_presentacion, concentracion, capacidad, unidad, tipo_envase,")
             w("  equivalencia_g, densidad, vigencia_desde, estado)")
             w(f"VALUES ({sql(p['id'])}, {sql(p['id_insumo'])}, "
