@@ -26,7 +26,12 @@ from pathlib import Path
 
 import openpyxl
 
-RAIZ_CENSO = Path("/Users/jjjangelosss/Desktop/IQF_Censo")
+_RUTAS_CENSO = [
+    Path("/Users/jjjangelosss/Downloads/IQBF_ENTREGA_MAC_2026-07-22/IQF_Censo"),
+    Path("/Users/jjjangelosss/Desktop/IQF_Censo"),
+    Path(__file__).resolve().parent.parent / "IQF_Censo",
+]
+RAIZ_CENSO = next((p for p in _RUTAS_CENSO if p.exists()), _RUTAS_CENSO[0])
 LIBRO = RAIZ_CENSO / "outputs" / "censo-iqbf-20260805" / \
     "Cimiento_Censo_IQBF_v5_2026-08-06.xlsx"
 sys.path.insert(0, str(RAIZ_CENSO / "_CENSO_PIPELINE"))
@@ -891,6 +896,7 @@ def emitir(datos, descartadas, reusar: bool = False) -> str:
               f"{sql(i['unidad_base'])}, {sql(i['densidad_variable'])}, 'VIGENTE')")
             w("  ON CONFLICT (id_insumo) DO UPDATE SET")
             w("    nombre_comercial = EXCLUDED.nombre_comercial,")
+            w("    tipo = EXCLUDED.tipo,")
             w("    densidad_variable = EXCLUDED.densidad_variable;")
         w("")
 
