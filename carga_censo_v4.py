@@ -155,12 +155,24 @@ LABORATORIO_ROTULO = {
 # su motivo en vez de forzar el modelo.
 #
 #   IQF0708 · hidróxido de sodio. Aparece como disolución de 1 L y como sólido
-#     de 1 kg. Manda LÍQUIDO porque la base ya lo tiene así desde la carga del
-#     2026-08-06, con un frasco colgando: cambiarle el estado ahora dejaría
-#     huérfano lo ya cargado. Los 11 frascos de sosa sólida necesitan su propio
-#     código IQF — es una decisión del laboratorio, no del cargador.
+#     de 1 kg. Manda SÓLIDO, y no por mayoría:
+#
+#       · El catálogo de producción —el que mantiene el laboratorio, no este
+#         cargador— tiene IQF0708 como SOLIDO, con TRES presentaciones en kg
+#         (000119, 000121, 000131) y ninguna en litros. Una de ellas, 000119,
+#         es justo la que reclaman los once frascos del censo.
+#       · Ese catálogo no tenía ningún frasco colgando, así que elegir sólido
+#         no deja nada huérfano.
+#
+#     Se corrigió el 2026-08-07: hasta entonces mandaba LÍQUIDO, deducido de la
+#     base local, donde el primer frasco cargado fue la disolución. Era el
+#     criterio equivocado —dejaba fuera once frascos para salvar uno— y
+#     contradecía el catálogo del laboratorio.
+#
+#     La que se queda fuera ahora es la DISOLUCIÓN de 1 L (IQF0708-141-01): es
+#     ella la que necesita un código IQF propio, no la sosa sólida.
 ESTADO_INSUMO = {
-    "IQF0708": "LIQUIDO",
+    "IQF0708": "SOLIDO",
 }
 
 # ─── Códigos que el censo escribió mal ───────────────────────────────────────
@@ -822,41 +834,50 @@ def emitir(datos, descartadas, reusar: bool = False) -> str:
     # puede tenerlo por una fila y faltarle en otra, y entonces las dos deben
     # resolverse igual o el lote apunta a una presentacion que no existe.
     ids_sin_sunat = {p["id"] for p in sin_sunat}
+    # Y el codigo con el que se busca en el destino es el de la PRESENTACION,
+    # no el de la fila del censo: una fila puede no traer la celda del codigo
+    # SUNAT y su presentacion tenerlo igualmente por otra fila hermana. Usar el
+    # de la fila generaba `p.codigo_bf_sunat = NULL`, que no es cierto nunca, y
+    # el frasco se caia con «su presentacion no existe en esta base».
+    sunat_de_presentacion = {p["id"]: p["codigo_bf_sunat"]
+                             for p in datos["presentaciones"]}
 
     if reusar:
-        w("-- ─── insumos, presentaciones y densidades ────────────────────────")
-        w("-- La base destino ya tiene sus maestros y manda ella: crear los")
-        w("-- mios duplicaria presentaciones para el mismo codigo SUNAT y")
-        w("-- partiria en dos el rollup de US-21.")
+        w("-- ─── insumos y presentaciones que el destino NO tiene ────────────")
+        w("-- La base destino manda: sus presentaciones se reutilizan tal cual,")
+        w("-- resueltas por codigo SUNAT, y crear las mias duplicaria una")
+        w("-- presentacion para el mismo codigo — partiria en dos el rollup.")
         w("--")
-        w("-- EXCEPCION: lo que no tiene codigo SUNAT. El destino identifica")
-        w("-- sus presentaciones por ese codigo, asi que una sustancia sin el")
-        w("-- no tiene contrapartida que reutilizar. Se crean sus maestros o")
-        w("-- sus frascos no entran en ningun sitio.")
+        w("-- Pero lo que el destino NO tiene no se puede reutilizar. Cada alta")
+        w("-- va condicionada a que no exista ya una presentacion con ese mismo")
+        w("-- (insumo, codigo SUNAT), asi que es segura: si existe, no toca")
+        w("-- nada; si falta, el frasco tiene por fin donde colgarse en vez de")
+        w("-- quedarse fuera del inventario.")
+        w("--")
+        w("-- `IS NOT DISTINCT FROM` y no `=`: las sustancias sin codigo SUNAT")
+        w("-- —etanol y metanol— lo tienen a NULL, y `NULL = NULL` no es cierto.")
         w("")
         for i in sorted(datos["insumos"], key=lambda x: x["id"]):
-            if i["id"] not in insumos_sin_sunat:
-                continue
             w("INSERT INTO insumo (id_insumo, nombre_comercial, tipo, unidad_base, "
               "densidad_variable, estado)")
             w(f"VALUES ({sql(i['id'])}, {sql(i['nombre'])}, {sql(i['tipo'])}, "
               f"{sql(i['unidad_base'])}, {sql(i['densidad_variable'])}, 'VIGENTE')")
             w("  ON CONFLICT (id_insumo) DO NOTHING;")
-        for p in sorted(sin_sunat, key=lambda x: x["id"]):
-            # Donde vive la densidad lo decide el INSUMO del destino, no yo:
-            # si lo tiene marcado como variable, la presentacion debe dejarla
-            # en NULL y la densidad viaja en el lote. Preguntarselo a la base
-            # evita chocar con fn_validar_densidad_presentacion_core.
+        for p in sorted(datos["presentaciones"], key=lambda x: x["id"]):
             w("INSERT INTO presentacion (id_presentacion, id_insumo, "
               "codigo_bf_sunat, codigo_presentacion, concentracion, capacidad, "
               "unidad, tipo_envase, equivalencia_g, densidad, estado)")
-            w(f"SELECT {sql(p['id'])}, i.id_insumo, NULL, "
+            w(f"SELECT {sql(p['id'])}, i.id_insumo, {sql(p['codigo_bf_sunat'])}, "
               f"{sql(p['codigo_presentacion'])}, {sql(p['concentracion'])}, "
               f"{sql(p['capacidad'])}, {sql(p['unidad'])}, "
               f"{sql(p['tipo_envase'])}, {sql(p['equivalencia_g'])},")
             w(f"  CASE WHEN i.densidad_variable OR i.tipo = 'SOLIDO' THEN NULL "
-              f"ELSE {sql(p['densidad'])} END, 'VIGENTE'")
+              f"ELSE {sql(p['densidad'])} END::numeric, 'VIGENTE'")
             w(f"  FROM insumo i WHERE i.id_insumo = {sql(p['id_insumo'])}")
+            w("    AND NOT EXISTS (SELECT 1 FROM presentacion x")
+            w(f"     WHERE x.id_insumo = {sql(p['id_insumo'])}")
+            w(f"       AND x.codigo_bf_sunat IS NOT DISTINCT FROM "
+              f"{sql(p['codigo_bf_sunat'])})")
             w("  ON CONFLICT (id_presentacion) DO NOTHING;")
         w("")
     else:
@@ -911,7 +932,8 @@ def emitir(datos, descartadas, reusar: bool = False) -> str:
             # que agrupa la declaracion, es el codigo BF.
             origen = (f"(SELECT p.id_presentacion FROM presentacion p"
                       f" WHERE p.id_insumo = {sql(lote['id_insumo'])}"
-                      f" AND p.codigo_bf_sunat = {sql(lote['codigo_bf_sunat'])}"
+                      f" AND p.codigo_bf_sunat ="
+                      f" {sql(sunat_de_presentacion[lote['id_presentacion']])}"
                       f" ORDER BY p.id_presentacion LIMIT 1)")
             # Donde vive la densidad lo decide el insumo del DESTINO: si la
             # tiene marcada como variable va en el lote, y si no, en la
@@ -955,7 +977,8 @@ def emitir(datos, descartadas, reusar: bool = False) -> str:
         if reusar and lote_de["id_presentacion"] not in ids_sin_sunat:
             pres_sql = (f"(SELECT p.id_presentacion FROM presentacion p"
                         f" WHERE p.id_insumo = {sql(lote_de['id_insumo'])}"
-                        f" AND p.codigo_bf_sunat = {sql(lote_de['codigo_bf_sunat'])}"
+                        f" AND p.codigo_bf_sunat ="
+                        f" {sql(sunat_de_presentacion[lote_de['id_presentacion']])}"
                         f" ORDER BY p.id_presentacion LIMIT 1)")
             custodio_sql = busca_investigador(f["custodio"]) if f["custodio"] else "NULL"
         else:

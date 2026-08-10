@@ -148,8 +148,18 @@ fusión o un desempate no debe deducirse leyendo código.
   evitar.
 - **`ESTADO_INSUMO`** — `IQF0708` cubre sosa en disolución (1 L) y sosa sólida
   (1 kg): un código para dos productos. El modelo guarda un estado por insumo,
-  así que se declara cuál manda y el otro se aparta. **Los 11 frascos de sosa
-  sólida necesitan su propio código IQF; lo decide el laboratorio.**
+  así que se declara cuál manda y el otro se aparta. **Manda SÓLIDO**, y no por
+  mayoría: el catálogo de producción —el que mantiene el laboratorio— tiene
+  `IQF0708` como sólido, con tres presentaciones en kg y ninguna en litros, y
+  una de ellas (`000119`) es justo la que reclaman los once frascos del censo.
+  **La que necesita un código IQF propio es la disolución de 1 L**, no la sosa
+  sólida.
+
+  > Hasta el 2026-08-07 mandaba LÍQUIDO, deducido de la base local, donde el
+  > primer frasco cargado fue la disolución. Era el criterio equivocado —dejaba
+  > fuera once frascos para salvar uno— y contradecía el catálogo del
+  > laboratorio. Deducir un maestro del orden en que se cargaron los datos es
+  > justo lo que no hay que hacer.
 - **`EQUIVALENTES_DESTINO`** — la base de producción escribe «PONCE» y el censo
   «Silvia Ponce». Sin esta tabla la carga crearía un segundo investigador.
 - **`CODIGO_CORREGIDO`** — solo entran correcciones con evidencia
@@ -172,17 +182,17 @@ trabaja la persona.
 
 ## Resultado (2026-08-07)
 
-    199 filas con código · 102 con «¿Existe? = Sí» · 77 cargadas · 25 apartadas
+    199 filas con código · 102 con «¿Existe? = Sí» · 87 cargadas · 15 apartadas
 
 Las otras 97 no son un fallo: 46 tienen `¿Existe? = No` —el frasco no se
 encontró— y **51 están en blanco porque el barrido de sólidos sigue abierto**.
 
 | Lo que queda fuera | Filas |
 |---|---|
-| Un código, dos estados físicos (la sosa sólida) | 11 |
 | Código SUNAT de 7 dígitos (`0000122` → ¿`000122`?) | 6 |
 | Código interno en conflicto con el SUNAT | 5 |
 | El envase no está rotulado (`SIN-CODIGO-nn`) | 4 |
+| Un código, dos estados físicos (la disolución de sosa) | 1 |
 | Falta un campo imprescindible | 1 |
 | El lote es una fecha | 1 |
 
@@ -191,20 +201,25 @@ a la foto o asignando un código.
 
 ### Estado de las dos bases
 
-| | Local `iqbf_firme` | Producción `iqbf-db` |
+| | Producción `iqbf-db` | Local `iqbf_firme` |
 |---|---|---|
-| Frascos | **77** | **75** |
-| Saldo | 101,46 kg | 101,17 kg |
+| Frascos | **87** | 77 |
+| Saldo | **111,76 kg** | 101,46 kg |
 | Indeterminados | 0 | 0 |
-| Declaración | 32 códigos | 31 códigos · 70,59 kg |
+| Declaración | 32 códigos · 81,18 kg | 32 códigos |
 
-Producción tiene dos menos: `IQF0708-141-01` y `IQF0408-04-05`, cuya
-presentación no existe en su maestro. Y su declaración es menor que el saldo
-porque los 19 frascos sin código SUNAT se cuentan aparte — que es exactamente
-lo que debe pasar.
+**Producción es la que está al día.** La local se quedó en 77 con el criterio
+anterior —`IQF0708` como líquido— y **no se puede corregir en sitio**: tiene el
+frasco de la disolución cargado, su movimiento de censo está en el kardex, y el
+kardex es inmutable. Rehacerla exige crearla de cero.
 
-Alertas en producción: 18 vencidos, **22 sin código SUNAT** (etanol y metanol),
-9 con la presentación desajustada, 2 sin custodio, 24 limpios.
+Que la base impida borrar ese movimiento **no es un estorbo, es la regla
+funcionando**: en un sistema fiscalizado un movimiento registrado no se borra
+porque el criterio del maestro haya cambiado.
+
+La declaración es menor que el saldo porque los **19 frascos sin código SUNAT**
+—etanol y metanol— se cuentan aparte. Alertas en producción: 26 vencidos, 22 sin
+código SUNAT, 9 con la presentación desajustada, 2 sin custodio, 28 limpios.
 
 ## Cómo se ejecuta
 
@@ -222,10 +237,10 @@ no entra nada. Conviene respaldar antes de todos modos.
 
 ## Evidencia
 
-- **Producción al 2026-08-07: 75 frascos · 101,17 kg · 0 indeterminados**, de
-  18 frascos y 33,42 kg esa misma mañana. Etanol `IQF0304` con 12 frascos
-  (14,696 kg) y metanol `IQF0308` con 7 (9,983 kg).
-- Local `iqbf_firme`: 77 frascos · 101,46 kg · 32 códigos SUNAT.
+- **Producción al 2026-08-07: 87 frascos · 111,76 kg · 0 indeterminados · 51
+  lotes · 25 insumos**, de 18 frascos y 33,42 kg esa misma mañana. Etanol
+  `IQF0304` con 12 frascos (14,696 kg), metanol `IQF0308` con 7 (9,983 kg) y
+  sosa sólida `IQF0708-000119-1KG` con 11 (9,769 kg).
 - Procedencia de la tara: la mayoría de la etiqueta fotografiada, **15
   corroboradas contra la ficha de ALL.DATA**, 1 del pesaje confirmado por el
   laboratorio.
@@ -236,16 +251,17 @@ no entra nada. Conviene respaldar antes de todos modos.
 ## Lo que falta
 
 1. **Cuatro decisiones del laboratorio**, por orden de cuánto desbloquean:
-   - Un **código IQF propio para la sosa sólida** → 11 frascos.
-   - Confirmar los **6 códigos SUNAT de siete dígitos** → 6.
+   - Confirmar los **6 códigos SUNAT de siete dígitos** → 6 frascos.
    - Verificar los **5 códigos internos en conflicto** con su SUNAT → 5.
    - **Rotular los 4 envases sin código** → 4.
+   - Un **código IQF propio para la disolución de sosa de 1 L** → 1.
 2. **`IQF1413-1` (DILUT-IT) no se puede cargar con lo que hay.** ALL.DATA no
    tiene ficha suya, el censo no trae presentación ni capacidad, y no tiene
    tara: pesa 63,61 g y no hay de dónde sacar el resto. No es un criterio del
    cargador — el dato no existe en ninguna fuente.
-3. **Dos presentaciones que faltan en producción** (`IQF0708-141`,
-   `IQF0408-04`), que dejan fuera un frasco cada una.
+3. **Rehacer la base local desde cero** para que coincida con producción. No se
+   puede corregir en sitio: el kardex no deja borrar el movimiento del frasco
+   que sobra.
 4. **Los sólidos.** 51 filas del censo están sin marcar `¿Existe?`: el barrido
    sigue abierto y declara 71 filas para 40 plazas rotuladas.
 5. **Seis custodios con adscripción provisional**, pendientes de confirmar.
