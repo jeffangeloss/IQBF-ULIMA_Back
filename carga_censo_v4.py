@@ -26,7 +26,12 @@ from pathlib import Path
 
 import openpyxl
 
-RAIZ_CENSO = Path("/Users/jjjangelosss/Desktop/IQF_Censo")
+_RUTAS_CENSO = [
+    Path("/Users/jjjangelosss/Downloads/IQBF_ENTREGA_MAC_2026-07-22/IQF_Censo"),
+    Path("/Users/jjjangelosss/Desktop/IQF_Censo"),
+    Path(__file__).resolve().parent.parent / "IQF_Censo",
+]
+RAIZ_CENSO = next((p for p in _RUTAS_CENSO if p.exists()), _RUTAS_CENSO[0])
 LIBRO = RAIZ_CENSO / "outputs" / "censo-iqbf-20260805" / \
     "Cimiento_Censo_IQBF_v5_2026-08-06.xlsx"
 sys.path.insert(0, str(RAIZ_CENSO / "_CENSO_PIPELINE"))
@@ -66,11 +71,30 @@ ALIAS_CUSTODIO: dict[str, tuple[str, str]] = {
     "quino":                 ("Quino", "PERSONA"),
     "academico (muedas)":    ("Muedas", "PERSONA"),
     "academico (la cruz)":   ("La Cruz", "PERSONA"),
+    # 2026-08-07 · Al ampliar la carga de 19 a 68 frascos aparecieron grafías
+    # nuevas. «Prof. Yacono» habría creado un SEGUNDO Juan Carlos Yacono, que
+    # es exactamente el defecto que esta tabla existe para evitar: «cuánto le
+    # queda a Yacono» habría dado una cifra partida en dos.
+    "prof. yacono":          ("Juan Carlos Yacono", "PERSONA"),
+    "prof yacono":           ("Juan Carlos Yacono", "PERSONA"),
+    "sanabria":              ("Sanabria", "PERSONA"),
+    "muedas":                ("Muedas", "PERSONA"),
+    "la cruz":               ("La Cruz", "PERSONA"),
+    "w. hernandez":          ("W. Hernández", "PERSONA"),
+    "hernandez":             ("W. Hernández", "PERSONA"),
+    "montoya":               ("Montoya", "PERSONA"),
+    "a. gutarra":            ("A. Gutarra", "PERSONA"),
+    "gutarra":               ("A. Gutarra", "PERSONA"),
+    "arroyo":                ("Arroyo", "PERSONA"),
     # Áreas: el censo no llegó a nombrar a la persona responsable.
     "academico":             ("Académico", "AREA"),
     "ing. civil":            ("Ing. Civil", "AREA"),
     "ing civil":             ("Ing. Civil", "AREA"),
     "lab docimasia":         ("Lab. Docimasia", "AREA"),
+    "lab. docimasia":        ("Lab. Docimasia", "AREA"),
+    "docimasia":             ("Lab. Docimasia", "AREA"),
+    "lab alimentos":         ("Lab. Alimentos", "AREA"),
+    "lab. alimentos":        ("Lab. Alimentos", "AREA"),
 }
 
 # ─── Equivalencias contra la base destino ───────────────────────────────────
@@ -129,11 +153,61 @@ LABORATORIO_ROTULO = {
     "faugro microb":  "FAUGRO Microbiología",
 }
 
+# ─── Insumos cuyo código cubre dos estados físicos ───────────────────────────
+#
+# El modelo guarda UN estado por insumo, y el censo trae códigos que cubren
+# dos. Aquí se declara cuál manda; los frascos del otro estado se apartan con
+# su motivo en vez de forzar el modelo.
+#
+#   IQF0708 · hidróxido de sodio. Aparece como disolución de 1 L y como sólido
+#     de 1 kg. Manda SÓLIDO, y no por mayoría:
+#
+#       · El catálogo de producción —el que mantiene el laboratorio, no este
+#         cargador— tiene IQF0708 como SOLIDO, con TRES presentaciones en kg
+#         (000119, 000121, 000131) y ninguna en litros. Una de ellas, 000119,
+#         es justo la que reclaman los once frascos del censo.
+#       · Ese catálogo no tenía ningún frasco colgando, así que elegir sólido
+#         no deja nada huérfano.
+#
+#     Se corrigió el 2026-08-07: hasta entonces mandaba LÍQUIDO, deducido de la
+#     base local, donde el primer frasco cargado fue la disolución. Era el
+#     criterio equivocado —dejaba fuera once frascos para salvar uno— y
+#     contradecía el catálogo del laboratorio.
+#
+#     La que se queda fuera ahora es la DISOLUCIÓN de 1 L (IQF0708-141-01): es
+#     ella la que necesita un código IQF propio, no la sosa sólida.
+ESTADO_INSUMO = {
+    "IQF0708": "SOLIDO",
+}
+
+# ─── Códigos que el censo escribió mal ───────────────────────────────────────
+#
+# Solo entran aquí las correcciones con evidencia INDEPENDIENTE del censo. No
+# se corrige por parecido: se corrige cuando otras fuentes coinciden entre sí.
+#
+#   IQF0303-44 → IQF0308-44. Tres confirmaciones:
+#     1. El rótulo del propio frasco dice IQF0308-44 (hallazgo §4 del censo).
+#     2. ALL.DATA tiene la ficha IQF0308-44 y no tiene ninguna IQF0303.
+#     3. La tara de esa ficha —1418.41 g— es IDÉNTICA al céntimo a la que el
+#        censo anotó para este frasco. Es el mismo envase.
+#   La capacidad no está en el censo; sale del neto inicial de ALL.DATA
+#   (4578.41 − 1418.41 = 3160 g), que es exactamente el nominal de 4 L de
+#   metanol (4 L × 0.79 g/mL) y coincide con la presentación IQF0308-4L que ya
+#   crean sus frascos hermanos.
+CODIGO_CORREGIDO: dict[str, tuple[str, str, str]] = {
+    "IQF0303-44": (
+        "IQF0308-44", "4 L",
+        "el rótulo dice IQF0308-44, ALL.DATA tiene esa ficha y su tara "
+        "(1418.41 g) coincide al céntimo con la del censo",
+    ),
+}
+
 # Custodios que son un ÁREA y no una persona: su laboratorio es él mismo.
 LABORATORIO_DE_AREA = {
     "Ing. Civil":     "Ingeniería Civil",
     "Lab. Docimasia": "Docimasia",
     "Académico":      "Académico",
+    "Lab. Alimentos": "Laboratorio de Alimentos",
 }
 
 # El nombre del insumo se toma del prefijo IQF####, no de la celda «Insumo»:
@@ -264,6 +338,30 @@ RE_UBICACION = re.compile(
     re.IGNORECASE)
 
 
+def densidad_de_etiqueta(texto) -> Decimal | None:
+    """«1.39 kg/L» → 1.39. La etiqueta la escribe con su unidad detrás.
+
+    kg/L y g/mL son la misma cifra, así que no hay conversión que hacer. Se
+    rechaza cualquier otra unidad antes que interpretarla mal.
+    """
+    t = limpiar(texto)
+    if not t:
+        return None
+    m = re.match(r"^([\d.,]+)\s*(kg/L|g/mL|g/ml|kg/l)?$", t, re.IGNORECASE)
+    if not m:
+        return None
+    return a_decimal(m.group(1))
+
+
+def texto_presentacion(v, idx) -> str | None:
+    """La columna «Presentación» y, si está vacía, la capacidad de la etiqueta.
+
+    Las dos son datos leídos: una la escribió el censo y la otra la imprime el
+    fabricante. Nueve frascos de etanol y metanol solo tienen la segunda.
+    """
+    return v[idx["Presentación"]] or v[idx["Capacidad nominal"]]
+
+
 def parsear_presentacion(texto: str) -> tuple[Decimal, str, str | None]:
     """«2.5 L, botella de VIDRIO AMBAR» → (2.5, 'L', 'Botella de vidrio ámbar')."""
     t = limpiar(texto) or ""
@@ -324,6 +422,51 @@ def leer_censo(filas_pedidas: list[int] | None):
     objetivo = filas_pedidas or [
         n for n, v in filas.items() if str(v[idx["¿Existe?"]]) == "Sí"]
 
+    # Las correcciones declaradas se aplican ANTES del pre-flight: si no, el
+    # frasco se cae por un dato que sí tenemos, solo que en otra fuente.
+    correcciones: list[str] = []
+    for n in objetivo:
+        cod = (limpiar(filas[n][idx["Código interno"]]) or "").lstrip("'")
+        if cod in CODIGO_CORREGIDO:
+            nuevo, capacidad, motivo = CODIGO_CORREGIDO[cod]
+            filas[n][idx["Código interno"]] = nuevo
+            if not filas[n][idx["Presentación"]]:
+                filas[n][idx["Capacidad nominal"]] = capacidad
+            correcciones.append(f"{cod} → {nuevo}: {motivo}")
+
+        # Normalización 1: Códigos SUNAT de 7 dígitos a 6 dígitos (eliminación de cero sobrante de IA)
+        sunat_val = str(filas[n][idx["Código SUNAT"]] or "").strip()
+        if sunat_val and len(sunat_val) == 7 and sunat_val.startswith("0"):
+            sunat_norm = sunat_val.lstrip("0").zfill(6)
+            filas[n][idx["Código SUNAT"]] = sunat_norm
+            correcciones.append(f"Fila {n} {cod}: Código SUNAT {sunat_val} normalizado a 6 dígitos -> {sunat_norm}")
+
+        # Normalización 2: Fila 81 (IQF0401-125-26) lote real de etiqueta en vez de fecha
+        if cod == "IQF0401-125-26" and str(filas[n][idx["Lote"]] or "").startswith("2027"):
+            filas[n][idx["Lote"]] = "I1265114 304"
+            correcciones.append(f"Fila {n} {cod}: Lote '2027-11-30' corregido a lote de etiqueta 'I1265114 304'")
+
+        # Normalización 3: Filas 16 y 17 (IQF0102-123-106/107) alineación de código SUNAT 123
+        if cod in ("IQF0102-123-106", "IQF0102-123-107") and str(filas[n][idx["Código SUNAT"]] or "").endswith("112"):
+            filas[n][idx["Código SUNAT"]] = "000123"
+            correcciones.append(f"Fila {n} {cod}: Código SUNAT '000112' corregido a '000123' acorde al segmento interno de etiqueta")
+
+        # Normalización 4: Filas 36 y 37 (IQF0106-124-23/24) alineación con ALL.DATA (código SUNAT 000122 de nítrico 2.5L)
+        if cod in ("IQF0106-124-23", "IQF0106-124-24"):
+            filas[n][idx["Código interno"]] = cod.replace("-124-", "-122-")
+            filas[n][idx["Código SUNAT"]] = "000122"
+            correcciones.append(f"Fila {n} {cod}: corregido a ALL.DATA -> {filas[n][idx['Código interno']]} (SUNAT 000122)")
+
+        # Normalización 5: Fila 39 (IQF0106-109-26) alineación con ALL.DATA (código SUNAT 000134 de nítrico 2.5L)
+        if cod == "IQF0106-109-26":
+            filas[n][idx["Código interno"]] = "IQF0106-134-26"
+            filas[n][idx["Código SUNAT"]] = "000134"
+            correcciones.append(f"Fila {n} {cod}: corregido a ALL.DATA -> IQF0106-134-26 (SUNAT 000134)")
+
+
+
+
+
     limpias, descartadas = [], []
     for n in sorted(objetivo):
         bloqueos, _avisos = revisar(n, filas[n], idx)
@@ -332,7 +475,62 @@ def leer_censo(filas_pedidas: list[int] | None):
             descartadas.append((n, codigo.lstrip("'"), bloqueos))
         else:
             limpias.append((n, filas[n]))
+
+    limpias, mixtos = separar_estados_mixtos(idx, limpias)
+    descartadas.extend(mixtos)
+    for corr in correcciones:
+        print(f"  codigo corregido · {corr}", file=sys.stderr)
+    descartadas.sort(key=lambda d: d[0])
     return idx, limpias, descartadas
+
+
+def separar_estados_mixtos(idx, limpias):
+    """Un insumo no puede ser líquido y sólido a la vez.
+
+    `IQF0708` aparece con presentaciones de 1 L (sosa en disolución) y de 1 kg
+    (sosa sólida): dos productos distintos bajo un mismo código. El modelo
+    guarda UN estado por insumo, así que se carga el que describen la mayoría
+    de sus presentaciones y el otro se aparta con su motivo.
+
+    No es una decisión técnica que convenga esconder: o la disolución merece su
+    propio código, o lo merece el sólido. Se apunta para el laboratorio.
+    """
+    from collections import Counter, defaultdict
+
+    estado_de = {}
+    por_insumo = defaultdict(list)
+    for n, v in limpias:
+        codigo = (limpiar(v[idx["Código interno"]]) or "").lstrip("'")
+        _cap, unidad, _env = parsear_presentacion(texto_presentacion(v, idx))
+        estado_de[n] = "SOLIDO" if unidad in ("g", "kg") else "LIQUIDO"
+        por_insumo[codigo.split("-")[0]].append(n)
+
+    minoritarias = set()
+    for insumo, filas_ in por_insumo.items():
+        cuenta = Counter(estado_de[n] for n in filas_)
+        if len(cuenta) < 2:
+            continue
+        # Lo declarado en ESTADO_INSUMO manda sobre el recuento: la mayoría no
+        # sabe qué hay ya cargado en la base de destino.
+        manda = ESTADO_INSUMO.get(insumo) or cuenta.most_common(1)[0][0]
+        for n in filas_:
+            if estado_de[n] != manda:
+                minoritarias.add(n)
+
+    quedan, apartadas = [], []
+    for n, v in limpias:
+        if n not in minoritarias:
+            quedan.append((n, v))
+            continue
+        codigo = (limpiar(v[idx["Código interno"]]) or f"fila {n}").lstrip("'")
+        insumo = codigo.split("-")[0]
+        otro = "sólido" if estado_de[n] == "LIQUIDO" else "líquido"
+        apartadas.append((n, codigo, [
+            f"C10 el insumo {insumo} aparece como {estado_de[n].lower()} y "
+            f"como {otro} en el censo; el modelo guarda un solo estado por "
+            f"insumo y manda el de sus otras presentaciones. Este frasco "
+            f"necesita su propio código."]))
+    return quedan, apartadas
 
 
 def construir(idx, limpias):
@@ -344,15 +542,57 @@ def construir(idx, limpias):
 
     for fila, v in limpias:
         codigo = (limpiar(g(v, "Código interno")) or "").lstrip("'")
-        m = re.match(r"^(IQF\d{4})-(\w+)-(\w+)$", codigo)
+        m = re.match(r"^(IQF\d{4})-(\w+)(?:-(\w+))?$", codigo)
         if not m:
             raise ValueError(f"fila {fila}: código interno inesperado {codigo!r}")
-        id_insumo, segmento, _ = m.groups()
-        id_presentacion = f"{id_insumo}-{segmento}"
+        id_insumo, segmento, frasco = m.groups()
 
-        capacidad, unidad, envase = parsear_presentacion(g(v, "Presentación"))
-        densidad = a_decimal(g(v, "Densidad"))
+        # La capacidad sale de «Presentación» y, si esa columna está vacía, de
+        # la capacidad rotulada por el fabricante. Las dos son datos leídos.
+        capacidad, unidad, envase = parsear_presentacion(texto_presentacion(v, idx))
+
+        if frasco is not None:
+            # Código de tres segmentos: el del medio es el código SUNAT y da
+            # nombre a la presentación, como en el resto del sistema.
+            id_presentacion = f"{id_insumo}-{segmento}"
+        else:
+            # Dos segmentos: la sustancia no tiene código SUNAT asignado, así
+            # que la presentación se nombra por su capacidad —«IQF0304-2-5L»—,
+            # que es el mismo criterio que usa el maestro de producción
+            # («IQF0102-000069-0-5L»: insumo, código y capacidad). Ver la nota
+            # de C9 en preflight_carga.py.
+            id_presentacion = (f"{id_insumo}-"
+                               f"{str(capacidad.normalize()).replace('.', '-')}"
+                               f"{unidad}")
+
+        # El tipo lo dice la unidad de la presentación, no una suposición: un
+        # envase de 500 g es un sólido y uno de 2.5 L un líquido. Hasta el
+        # 2026-08-07 esto estaba fijo en LIQUIDO porque la carga solo llevaba
+        # ácidos; al ampliarla entraron sosa, carbonatos y óxido de calcio, y
+        # la base lo rechazó — con razón: «un sólido no debe tener densidad en
+        # PRESENTACION».
+        tipo = "SOLIDO" if unidad in ("g", "kg") else "LIQUIDO"
+
+        # La densidad es cosa de líquidos. Si la columna del censo está vacía
+        # se recurre a la impresa en la etiqueta del fabricante, que es un dato
+        # leído, no estimado.
+        densidad = a_decimal(g(v, "Densidad")) if tipo == "LIQUIDO" else None
+        if tipo == "LIQUIDO" and densidad is None:
+            densidad = densidad_de_etiqueta(g(v, "Densidad (etiqueta)"))
+
+        # Lo que el envase declara contener, en gramos. Si el censo no lo trae,
+        # se deriva de la capacidad rotulada: 2.5 L × 1.18 g/mL = 2950 g, y un
+        # envase de 0.5 kg son 500 g. No es una estimación del contenido real
+        # —eso es bruto − tara— sino la conversión de lo que dice el envase.
         nominal = a_decimal(g(v, "Contenido nominal (g)"))
+        if nominal is None and capacidad is not None:
+            if tipo == "SOLIDO":
+                nominal = capacidad * (1000 if unidad == "kg" else 1)
+            elif densidad is not None:
+                nominal = capacidad * (1000 if unidad == "L" else 1) * densidad
+            if nominal is not None:
+                nominal = nominal.quantize(Decimal("0.0001"))
+
         sunat = limpiar(g(v, "Código SUNAT"))
 
         # ── insumo ──────────────────────────────────────────────────────────
@@ -360,7 +600,7 @@ def construir(idx, limpias):
             "id": id_insumo,
             "nombre": NOMBRE_INSUMO.get(id_insumo,
                                         limpiar(g(v, "Insumo")) or id_insumo),
-            "tipo": "LIQUIDO",
+            "tipo": tipo,
             "unidad_base": "g",
             # En estos 20 frascos la densidad no varía entre lotes de una misma
             # presentación: varía ENTRE presentaciones (marcas y concentraciones
@@ -371,16 +611,34 @@ def construir(idx, limpias):
         })
 
         # ── presentación ────────────────────────────────────────────────────
+        # Dos frascos de la misma presentación que declaran densidades DISTINTAS
+        # es una contradicción y aborta la carga. Que uno la traiga y otro no,
+        # en cambio, es un hueco: se rellena con la que sí está. Distinguirlo
+        # importa desde que entran los frascos sin código SUNAT, donde una fila
+        # trae la densidad de la etiqueta y su hermana no.
         previa = presentaciones.get(id_presentacion)
-        if previa and previa["densidad"] != densidad:
-            raise ValueError(
-                f"la presentación {id_presentacion} aparece con dos densidades "
-                f"({previa['densidad']} y {densidad}): revísese antes de cargar")
+        if previa:
+            if (previa["densidad"] is not None and densidad is not None
+                    and previa["densidad"] != densidad):
+                raise ValueError(
+                    f"la presentación {id_presentacion} aparece con dos "
+                    f"densidades ({previa['densidad']} y {densidad}): "
+                    "revísese antes de cargar")
+            if previa["densidad"] is None and densidad is not None:
+                previa["densidad"] = densidad
+                if previa["equivalencia_g"] is None and nominal is not None:
+                    previa["equivalencia_g"] = nominal
+            elif densidad is None:
+                densidad = previa["densidad"]
         presentaciones.setdefault(id_presentacion, {
             "id": id_presentacion,
             "id_insumo": id_insumo,
             "codigo_bf_sunat": sunat,
-            "codigo_presentacion": recortar(segmento, 20),
+            # En los códigos de dos segmentos el segmento NO es el código de
+            # presentación (ahí es el número de frasco), así que se usa el
+            # identificador derivado de la capacidad.
+            "codigo_presentacion": recortar(
+                segmento if frasco is not None else id_presentacion, 20),
             "concentracion": recortar(g(v, "Concentración"), 40),
             "capacidad": capacidad,
             "unidad": unidad,
@@ -428,11 +686,31 @@ def construir(idx, limpias):
             investigadores.add(resuelto)
 
         # ── frasco ──────────────────────────────────────────────────────────
+        #
+        # La tara la manda ALL.DATA (decisión del laboratorio, 2026-08-07).
+        # `Tara (kg)` del censo ES la de ALL.DATA —se comprobó que coinciden en
+        # las 179 filas comparables, sin una excepción— así que se toma primero.
+        # Solo si esa columna está vacía se recurre a la etiqueta fotografiada,
+        # y entonces se deja dicho de dónde salió.
+        #
+        # Ocho frascos tienen la etiqueta manuscrita discrepando de ALL.DATA
+        # (H-24). Se cargan con la de ALL.DATA, como se decidió, y siguen en la
+        # lista de pesar vacíos: una tara calculada no es una medición.
         bruto = a_decimal(g(v, "Peso bruto balanza (g)"))
         tara = a_decimal(g(v, "Tara (kg)"))
-        tara = tara * 1000 if tara is not None else a_decimal(
-            g(v, "Tara de etiqueta (g)"))
+        if tara is not None:
+            tara *= 1000
+            origen_tara = "ALL.DATA (libros CONTROL DE REACTIVOS)"
+        else:
+            tara = a_decimal(g(v, "Tara de etiqueta (g)"))
+            origen_tara = ("Etiqueta del frasco (ALL.DATA no la tiene)"
+                           if tara is not None else None)
         neto = (bruto - tara) if (bruto is not None and tara is not None) else None
+
+        # Lo que el censo declara sobre la procedencia, más lo que acabamos de
+        # resolver. Si el censo ya lo explicaba, su texto manda: es más
+        # concreto que la regla general.
+        fuente_tara = recortar(g(v, "Fuente de la tara"), 200) or origen_tara
 
         laboratorio = LABORATORIO_ROTULO.get(
             sin_acento(g(v, "Laboratorio (etiqueta)")))
@@ -447,7 +725,7 @@ def construir(idx, limpias):
             "peso_bruto_g": bruto,
             "tara_g": tara,
             "neto_g": neto,
-            "fuente_tara": recortar(g(v, "Fuente de la tara"), 200),
+            "fuente_tara": fuente_tara,
             "fecha_pesaje": a_hora(g(v, "Fecha de pesado")),
             "condicion_envase": recortar(g(v, "Estado físico"), 20),
             "volumen_ml": (neto / densidad).quantize(Decimal("0.0001"))
@@ -457,6 +735,16 @@ def construir(idx, limpias):
             "accion": limpiar(g(v, "Acción")),
         })
 
+    # Laboratorio de cada custodio deducido de SUS PROPIOS frascos, y solo si
+    # todos coinciden. Dos laboratorios distintos no se promedian: se deja sin
+    # deducir y decide la regla de más abajo.
+    lab_custodio: dict[str, str] = {}
+    for nombre, _ in investigadores:
+        suyos = {f["laboratorio"] for f in frascos
+                 if f["custodio"] == nombre and f["laboratorio"]}
+        if len(suyos) == 1:
+            lab_custodio[nombre] = suyos.pop()
+
     return {
         "insumos": list(insumos.values()),
         "presentaciones": list(presentaciones.values()),
@@ -464,6 +752,7 @@ def construir(idx, limpias):
         "lotes": list(lotes.values()),
         "ubicaciones": list(ubicaciones.values()),
         "investigadores": sorted(investigadores),
+        "lab_custodio": lab_custodio,
         "frascos": frascos,
     }
 
@@ -482,7 +771,11 @@ def emitir(datos, descartadas, reusar: bool = False) -> str:
     w(f"-- {len(datos['frascos'])} frascos cargados · "
       f"{len(descartadas)} descartados por el pre-flight")
     w("--")
-    w("-- Los descartados NO son campos vacíos: son contradicciones internas.")
+    w("-- Un campo vacío YA NO descarta: el frasco entra con el hueco marcado")
+    w("-- (sin código SUNAT, sin densidad, sin fecha) y la aplicación lo enseña")
+    w("-- como alerta. Lo que queda fuera es lo que no se puede IDENTIFICAR ni")
+    w("-- PESAR, o lo que exige una decisión del laboratorio. Se resuelve")
+    w("-- volviendo a la foto o rotulando el frasco, no eligiendo un número.")
     w("-- Se resuelven volviendo a la foto, no eligiendo el número más creíble.")
     for fila, codigo, bloqueos in descartadas:
         w(f"--   fila {fila:>3}  {codigo}")
@@ -529,8 +822,21 @@ def emitir(datos, descartadas, reusar: bool = False) -> str:
 
     w("-- ─── investigadores (lista controlada · US-04) ────────────────────")
     w("-- Nombres canónicos: ver ALIAS_CUSTODIO en carga_censo_v4.py.")
+    w("--")
+    w("-- La base exige que todo investigador tenga carrera o laboratorio")
+    w("-- (ck_investigador_adscripcion). Se resuelve en este orden:")
+    w("--   1. si es un ÁREA, su laboratorio es él mismo;")
+    w("--   2. si todos sus frascos declaran el mismo laboratorio, ese;")
+    w("--   3. si no, el del almacén donde están sus frascos, MARCADO COMO")
+    w("--      PROVISIONAL: es dónde está el producto, no dónde trabaja la")
+    w("--      persona. Hay que confirmarlo con el laboratorio.")
     for nombre, tipo in datos["investigadores"]:
-        lab = LABORATORIO_DE_AREA.get(nombre)
+        lab = LABORATORIO_DE_AREA.get(nombre) or datos["lab_custodio"].get(nombre)
+        if not lab:
+            lab = LABORATORIO_DEL_ALMACEN
+            w(f"-- PROVISIONAL · {nombre}: sin laboratorio en ninguno de sus "
+              f"frascos; se le adscribe «{lab}» por ser el almacén donde están. "
+              "CONFIRMAR.")
         equivalentes = nombres_equivalentes(nombre) if reusar else [nombre]
         w("INSERT INTO investigador (nombre, tipo, id_laboratorio)")
         w(f"SELECT {sql(nombre)}, {sql(tipo)}, "
@@ -555,11 +861,62 @@ def emitir(datos, descartadas, reusar: bool = False) -> str:
     w("$$;")
     w("")
 
+    # En modo reutilizacion la presentacion del destino se resuelve por CODIGO
+    # SUNAT. Las sustancias que NO lo tienen —etanol y metanol— no pueden
+    # resolverse asi ni existir alla: hay que crearlas, o se quedan fuera del
+    # inventario entero. Se crean solo esas.
+    sin_sunat = [p for p in datos["presentaciones"] if not p["codigo_bf_sunat"]]
+    insumos_sin_sunat = {p["id_insumo"] for p in sin_sunat}
+    # Lo que decide como resolver un lote o un frasco es si SU PRESENTACION
+    # tiene codigo SUNAT, no si lo traia la fila del censo: una presentacion
+    # puede tenerlo por una fila y faltarle en otra, y entonces las dos deben
+    # resolverse igual o el lote apunta a una presentacion que no existe.
+    ids_sin_sunat = {p["id"] for p in sin_sunat}
+    # Y el codigo con el que se busca en el destino es el de la PRESENTACION,
+    # no el de la fila del censo: una fila puede no traer la celda del codigo
+    # SUNAT y su presentacion tenerlo igualmente por otra fila hermana. Usar el
+    # de la fila generaba `p.codigo_bf_sunat = NULL`, que no es cierto nunca, y
+    # el frasco se caia con «su presentacion no existe en esta base».
+    sunat_de_presentacion = {p["id"]: p["codigo_bf_sunat"]
+                             for p in datos["presentaciones"]}
+
     if reusar:
-        w("-- ─── insumos, presentaciones y densidades ────────────────────────")
-        w("-- OMITIDOS: la base destino ya tiene sus maestros y manda ella.")
-        w("-- Crear los mios duplicaria presentaciones para el mismo codigo")
-        w("-- SUNAT y partiria en dos el rollup de US-21.")
+        w("-- ─── insumos y presentaciones que el destino NO tiene ────────────")
+        w("-- La base destino manda: sus presentaciones se reutilizan tal cual,")
+        w("-- resueltas por codigo SUNAT, y crear las mias duplicaria una")
+        w("-- presentacion para el mismo codigo — partiria en dos el rollup.")
+        w("--")
+        w("-- Pero lo que el destino NO tiene no se puede reutilizar. Cada alta")
+        w("-- va condicionada a que no exista ya una presentacion con ese mismo")
+        w("-- (insumo, codigo SUNAT), asi que es segura: si existe, no toca")
+        w("-- nada; si falta, el frasco tiene por fin donde colgarse en vez de")
+        w("-- quedarse fuera del inventario.")
+        w("--")
+        w("-- `IS NOT DISTINCT FROM` y no `=`: las sustancias sin codigo SUNAT")
+        w("-- —etanol y metanol— lo tienen a NULL, y `NULL = NULL` no es cierto.")
+        w("")
+        for i in sorted(datos["insumos"], key=lambda x: x["id"]):
+            w("INSERT INTO insumo (id_insumo, nombre_comercial, tipo, unidad_base, "
+              "densidad_variable, estado)")
+            w(f"VALUES ({sql(i['id'])}, {sql(i['nombre'])}, {sql(i['tipo'])}, "
+              f"{sql(i['unidad_base'])}, {sql(i['densidad_variable'])}, 'VIGENTE')")
+            w("  ON CONFLICT (id_insumo) DO NOTHING;")
+        for p in sorted(datos["presentaciones"], key=lambda x: x["id"]):
+            w("INSERT INTO presentacion (id_presentacion, id_insumo, "
+              "codigo_bf_sunat, codigo_presentacion, concentracion, capacidad, "
+              "unidad, tipo_envase, equivalencia_g, densidad, estado)")
+            w(f"SELECT {sql(p['id'])}, i.id_insumo, {sql(p['codigo_bf_sunat'])}, "
+              f"{sql(p['codigo_presentacion'])}, {sql(p['concentracion'])}, "
+              f"{sql(p['capacidad'])}, {sql(p['unidad'])}, "
+              f"{sql(p['tipo_envase'])}, {sql(p['equivalencia_g'])},")
+            w(f"  CASE WHEN i.densidad_variable OR i.tipo = 'SOLIDO' THEN NULL "
+              f"ELSE {sql(p['densidad'])} END::numeric, 'VIGENTE'")
+            w(f"  FROM insumo i WHERE i.id_insumo = {sql(p['id_insumo'])}")
+            w("    AND NOT EXISTS (SELECT 1 FROM presentacion x")
+            w(f"     WHERE x.id_insumo = {sql(p['id_insumo'])}")
+            w(f"       AND x.codigo_bf_sunat IS NOT DISTINCT FROM "
+              f"{sql(p['codigo_bf_sunat'])})")
+            w("  ON CONFLICT (id_presentacion) DO NOTHING;")
         w("")
     else:
         w("-- ─── insumos ──────────────────────────────────────────────────────")
@@ -572,6 +929,7 @@ def emitir(datos, descartadas, reusar: bool = False) -> str:
               f"{sql(i['unidad_base'])}, {sql(i['densidad_variable'])}, 'VIGENTE')")
             w("  ON CONFLICT (id_insumo) DO UPDATE SET")
             w("    nombre_comercial = EXCLUDED.nombre_comercial,")
+            w("    tipo = EXCLUDED.tipo,")
             w("    densidad_variable = EXCLUDED.densidad_variable;")
         w("")
 
@@ -606,18 +964,34 @@ def emitir(datos, descartadas, reusar: bool = False) -> str:
     w("-- ─── lotes ────────────────────────────────────────────────────────")
     for lote in sorted(datos["lotes"], key=lambda x: (x["id_presentacion"],
                                                       x["numero_lote"] or "")):
-        if reusar:
+        if reusar and lote["id_presentacion"] not in ids_sin_sunat:
             # La presentacion se resuelve por CODIGO SUNAT contra la que ya
             # existe. La produccion nombra sus presentaciones de otra forma
             # (`IQF0102-000112-2-5L`); lo que las identifica de verdad, y lo
             # que agrupa la declaracion, es el codigo BF.
             origen = (f"(SELECT p.id_presentacion FROM presentacion p"
                       f" WHERE p.id_insumo = {sql(lote['id_insumo'])}"
-                      f" AND p.codigo_bf_sunat = {sql(lote['codigo_bf_sunat'])}"
+                      f" AND p.codigo_bf_sunat ="
+                      f" {sql(sunat_de_presentacion[lote['id_presentacion']])}"
                       f" ORDER BY p.id_presentacion LIMIT 1)")
-            # Sus insumos tienen densidad_variable = TRUE, asi que la densidad
-            # vive en el LOTE y la presentacion la deja en NULL.
-            densidad = sql(lote.get("densidad"))
+            # Donde vive la densidad lo decide el insumo del DESTINO: si la
+            # tiene marcada como variable va en el lote, y si no, en la
+            # presentacion y el lote la deja en NULL. Se le pregunta a la base
+            # en vez de suponerlo, que es lo que rompia con los insumos que
+            # este mismo SQL acaba de crear.
+            densidad = (f"(SELECT CASE WHEN i.densidad_variable THEN "
+                        f"{sql(lote.get('densidad'))} ELSE NULL END::numeric"
+                        f" FROM insumo i WHERE i.id_insumo ="
+                        f" {sql(lote['id_insumo'])})")
+        elif reusar:
+            # Sin codigo SUNAT no hay nada que reutilizar: la presentacion la
+            # acaba de crear este mismo SQL, y se referencia por su id. La
+            # densidad sigue decidiendola el insumo del destino.
+            origen = sql(lote["id_presentacion"])
+            densidad = (f"(SELECT CASE WHEN i.densidad_variable THEN "
+                        f"{sql(lote.get('densidad'))} ELSE NULL END::numeric"
+                        f" FROM insumo i WHERE i.id_insumo ="
+                        f" {sql(lote['id_insumo'])})")
         else:
             origen = sql(lote["id_presentacion"])
             densidad = "NULL"
@@ -639,10 +1013,11 @@ def emitir(datos, descartadas, reusar: bool = False) -> str:
     for f in datos["frascos"]:
         pres, numero = f["clave_lote"]
         lote_de = next(x for x in datos["lotes"] if x["clave"] == f["clave_lote"])
-        if reusar:
+        if reusar and lote_de["id_presentacion"] not in ids_sin_sunat:
             pres_sql = (f"(SELECT p.id_presentacion FROM presentacion p"
                         f" WHERE p.id_insumo = {sql(lote_de['id_insumo'])}"
-                        f" AND p.codigo_bf_sunat = {sql(lote_de['codigo_bf_sunat'])}"
+                        f" AND p.codigo_bf_sunat ="
+                        f" {sql(sunat_de_presentacion[lote_de['id_presentacion']])}"
                         f" ORDER BY p.id_presentacion LIMIT 1)")
             custodio_sql = busca_investigador(f["custodio"]) if f["custodio"] else "NULL"
         else:

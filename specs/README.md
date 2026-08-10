@@ -19,6 +19,20 @@ evidencia.
 
 - [Sprint 0 — Base funcional y técnica](sprint0/README.md)
 - [Sprint 1 — Acceso y maestros](sprint1/README.md)
+- [Sprint 2 — Inventario físico, consumo y declaración](sprint2/README.md)
+- [Épica E4 — Autorizaciones de uso y excepciones](e4/README.md)
+
+## Diagramas
+
+- [Diagramas del sistema](diagramas/README.md) — ocho páginas en formato
+  `.drawio`: casos de uso de negocio y por módulo, componentes y despliegue,
+  modelo de datos y la secuencia del consumo por doble pesada. **Se generan
+  desde el propio sistema**, no se dibujan a mano.
+
+## De dónde salen los datos
+
+- [Carga del censo físico](sprint2/CARGA-CENSO.md) — las tres fuentes, cuál
+  manda para la tara, qué bloquea el pre-flight y qué solo avisa.
 
 ## Evidencia complementaria
 
