@@ -932,7 +932,9 @@ def emitir(datos, descartadas, reusar: bool = False) -> str:
             w("    tipo = EXCLUDED.tipo,")
             w("    densidad_variable = EXCLUDED.densidad_variable;")
         w("")
-
+        w("-- ─── sanear densidades invalidas en lotes existentes ─────────────")
+        w("UPDATE lote l SET densidad = NULL FROM presentacion p JOIN insumo i ON i.id_insumo = p.id_insumo WHERE l.id_presentacion = p.id_presentacion AND (i.tipo = 'SOLIDO' OR NOT i.densidad_variable) AND l.densidad IS NOT NULL;")
+        w("")
         w("-- ─── presentaciones ───────────────────────────────────────────────")
         for p in sorted(datos["presentaciones"], key=lambda x: x["id"]):
             if p["codigo_bf_sunat"]:
