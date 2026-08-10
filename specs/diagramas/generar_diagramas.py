@@ -181,10 +181,10 @@ P1 = casos_de_uso(
     ["Gestionar seguridad y cuentas",
      "Mantener maestros y catálogos",
      "Levantar y consultar el inventario",
-     "Registrar consumos, mermas y ajustes",
+     "Registrar consumos y ajustes",
      "Autorizar el uso y resolver excepciones",
      "Consolidar la declaración SUNAT",
-     "Auditar la bitácora y el kardex",
+     "Consultar el kardex de un frasco",
      "Importar y conciliar el censo físico"],
     [("Administrador técnico", "Gestionar seguridad y cuentas"),
      ("Responsable IQBF", "Gestionar seguridad y cuentas"),
@@ -193,15 +193,22 @@ P1 = casos_de_uso(
      ("Responsable IQBF", "Consolidar la declaración SUNAT"),
      ("Responsable IQBF", "Autorizar el uso y resolver excepciones"),
      ("Operador de docimasia", "Levantar y consultar el inventario"),
-     ("Operador de docimasia", "Registrar consumos, mermas y ajustes"),
+     ("Operador de docimasia", "Registrar consumos y ajustes"),
      ("Docente investigador", "Levantar y consultar el inventario"),
      ("Aprobador", "Autorizar el uso y resolver excepciones"),
-     ("Auditor", "Auditar la bitácora y el kardex")],
+     ("Auditor", "Consultar el kardex de un frasco")],
     nota=("El ROL y el ALCANCE son cosas distintas.\n\n"
           "El alcance global NO otorga roles: el servidor lo "
           "exige ADEMÁS del rol, nunca en su lugar.\n\n"
-          "Una cuenta con alcance global y sin "
-          "RESPONSABLE_IQBF recibe 403 al tocar un maestro."))
+          "AVISO · El rol AUDITOR no aparece en ningún "
+          "require_roles: hoy no habilita nada distinto de "
+          "una cuenta autenticada cualquiera.\n\n"
+          "La BITÁCORA se llena sola por disparadores de la "
+          "base, pero NINGUNA ruta la lee: solo se consulta "
+          "por SQL.\n\n"
+          "La MERMA y las BAJAS existen en el modelo y "
+          "ninguna ruta las produce: el motivo va fijo en "
+          "cada INSERT."))
 
 # ─── P2 · Gestionar Seguridad ────────────────────────────────────────────────
 
@@ -214,21 +221,28 @@ P2 = casos_de_uso(
     ["Iniciar sesión", "Cerrar sesión",
      "Consultar identidad y permisos", "Crear cuenta",
      "Bloquear o desactivar una cuenta", "Asignar roles a una cuenta",
-     "Definir alcance por establecimiento", "Registrar el acceso en bitácora"],
+     "Definir el alcance por establecimiento o laboratorio",
+     "Listar y consultar cuentas"],
     [("Usuario", "Iniciar sesión"),
      ("Usuario", "Cerrar sesión"),
      ("Usuario", "Consultar identidad y permisos"),
      ("Administrador técnico", "Crear cuenta"),
      ("Administrador técnico", "Bloquear o desactivar una cuenta"),
-     ("Administrador técnico", "Definir alcance por establecimiento"),
-     ("Responsable IQBF", "Asignar roles a una cuenta")],
-    extiende=[("Iniciar sesión", "Registrar el acceso en bitácora", "«include»"),
-              ("Cerrar sesión", "Registrar el acceso en bitácora", "«include»")],
-    nota=("Separación de poderes, implementada:\n\n"
+     ("Administrador técnico", "Definir el alcance por establecimiento o laboratorio"),
+     ("Responsable IQBF", "Asignar roles a una cuenta"),
+     ("Responsable IQBF", "Listar y consultar cuentas"),
+     ("Administrador técnico", "Listar y consultar cuentas")],
+    extiende=[],
+    nota=("Separación de poderes, con su letra pequeña:\n\n"
           "• Crear cuentas → ADMIN_TECNICO\n"
-          "• Cambiar roles → RESPONSABLE_IQBF\n\n"
-          "Ninguno puede hacer lo del otro, y ambos "
-          "exigen alcance global.\n\n"
+          "• CAMBIAR roles de una cuenta ya creada →\n"
+          "  RESPONSABLE_IQBF\n"
+          "Ambos exigen además alcance global.\n\n"
+          "PERO al CREAR la cuenta, POST /api/usuarios exige "
+          "el campo `roles` y lo persiste — así que el "
+          "ADMIN_TECNICO sí fija los roles iniciales.\n\n"
+          "Y no hay guarda contra la automodificación: "
+          "un RESPONSABLE_IQBF puede editarse a sí mismo.\n\n"
           "Una cuenta no se borra: cambia de estado."))
 
 # ─── P3 · Gestionar Maestros ─────────────────────────────────────────────────
@@ -251,12 +265,17 @@ P3 = casos_de_uso(
      ("Responsable IQBF", "Mantener los catálogos controlados"),
      ("Operador de docimasia", "Buscar por nombre o por código"),
      ("Operador de docimasia", "Exportar un catálogo a CSV")],
-    nota=("La búsqueda pasa por la tabla de ALIAS.\n\n"
-          "El censo trae seis grafías del etanol: "
-          "Ethanol, Alcohol Etílico Absoluto, Etanol, "
-          "Etanolo…\n\n"
-          "Quien pide «etanol» tiene que encontrarlo "
-          "diga lo que diga el rótulo."))
+    nota=("La búsqueda pasa por la tabla de ALIAS, y el "
+          "mecanismo funciona.\n\n"
+          "PERO el dato falta donde más hace falta: el "
+          "etanol (IQF0304), el metanol (IQF0308) y el "
+          "ácido nítrico (IQF0106) tienen CERO alias "
+          "sembrados, justo los 19 frascos cargados el "
+          "2026-08-07.\n\n"
+          "Hoy quien pide «etanol» NO los encuentra por "
+          "alias. Hay que sembrarlos.\n\n"
+          "Buscar y exportar no exigen ningún rol: los "
+          "hace cualquier cuenta autenticada."))
 
 # ─── P4 · Inventario y consumo ───────────────────────────────────────────────
 
@@ -267,7 +286,7 @@ P4 = casos_de_uso(
     ["Operador de docimasia", "Docente investigador", "Responsable IQBF"],
     "Sistema IQBF — Inventario",
     ["Buscar frascos con filtros", "Ver la ficha y el kardex de un frasco",
-     "Consultar el panel del inventario", "Consultar mi saldo por custodio",
+     "Consultar el panel del inventario", "Consultar el saldo de todos los custodios",
      "Consultar el stock por laboratorio", "Registrar consumo por doble pesada",
      "Registrar consumo por cantidad", "Confirmar el saldo sin moverlo",
      "Consolidar la declaración SUNAT", "Rechazar el movimiento inválido"],
@@ -276,22 +295,29 @@ P4 = casos_de_uso(
      ("Operador de docimasia", "Registrar consumo por doble pesada"),
      ("Operador de docimasia", "Registrar consumo por cantidad"),
      ("Operador de docimasia", "Confirmar el saldo sin moverlo"),
-     ("Docente investigador", "Consultar mi saldo por custodio"),
+     ("Docente investigador", "Consultar el saldo de todos los custodios"),
      ("Docente investigador", "Buscar frascos con filtros"),
      ("Responsable IQBF", "Consultar el stock por laboratorio"),
      ("Responsable IQBF", "Consolidar la declaración SUNAT"),
      ("Responsable IQBF", "Consultar el panel del inventario")],
     extiende=[("Registrar consumo por doble pesada", "Rechazar el movimiento inválido", "«extend»"),
               ("Registrar consumo por cantidad", "Rechazar el movimiento inválido", "«extend»")],
-    nota=("Los rechazos los impone PostgreSQL, no la\n"
-          "aplicación. Un INSERT a mano con psql choca\n"
-          "contra la misma regla:\n\n"
+    nota=("Quién impone cada rechazo, que NO es lo mismo:\n\n"
+          "LA BASE (un INSERT a mano con psql choca\n"
+          "contra la misma regla):\n"
           "• SALDO_INSUFICIENTE\n"
           "• CUSTODIA_AJENA\n"
           "• SALDO_INDETERMINADO (sin tara)\n"
+          "• KARDEX_INMUTABLE\n"
+          "• SALDO_SOLO_VIA_KARDEX\n\n"
+          "LA APLICACIÓN, antes de escribir:\n"
           "• PESADA_NO_CUADRA\n"
-          "• AUTORIZACION_INSUFICIENTE\n"
-          "• KARDEX_INMUTABLE"))
+          "• AUTORIZACION_INSUFICIENTE\n\n"
+          "Estas dos SÍ se pueden rodear por SQL directo.\n\n"
+          "AVISO · Ninguna de las 9 rutas de inventario\n"
+          "exige rol: las nueve las puede llamar cualquier\n"
+          "cuenta autenticada. El reparto por actor de este\n"
+          "diagrama es de NEGOCIO, no de autorización."))
 
 # ─── P5 · Autorizaciones y excepciones ───────────────────────────────────────
 
@@ -314,9 +340,10 @@ P5 = casos_de_uso(
      ("Docente investigador", "Consultar mis autorizaciones y saldo"),
      ("Docente investigador", "Descargar una versión del soporte"),
      ("Operador de docimasia", "Solicitar una excepción"),
-     ("Aprobador", "Aprobar o rechazar la excepción")],
+     ("Aprobador", "Aprobar o rechazar la excepción"),
+     ("Responsable IQBF", "Aprobar o rechazar la excepción")],
     extiende=[("Validar el cupo antes de entregar", "Solicitar una excepción", "«extend»"),
-              ("Aprobar o rechazar la excepción", "Ejecutar el consumo al aprobar", "«include»")],
+              ("Aprobar o rechazar la excepción", "Ejecutar el consumo al aprobar", "«extend» solo si se aprueba")],
     nota=("El saldo autorizado NO se guarda: se recalcula\n"
           "desde el kardex en cada consulta.\n\n"
           "Aprobar EJECUTA el consumo en el mismo acto.\n"
@@ -386,8 +413,9 @@ P6 = componentes()
 # ─── P7 · Diagrama de base de datos ──────────────────────────────────────────
 
 TABLAS = {
-    "usuario": ["id_usuario PK", "email UQ", "contrasena", "estado", "alcance_global"],
-    "rol": ["codigo_rol PK", "nombre"],
+    "usuario": ["id_usuario PK", "email UQ", "contrasena", "estado",
+                "alcance_global", "intentos_fallidos", "bloqueado_hasta"],
+    "rol": ["codigo PK", "nombre"],
     "usuario_rol": ["id_usuario FK", "codigo_rol FK"],
     "usuario_alcance": ["id_usuario FK", "id_establecimiento FK", "id_laboratorio FK"],
     "establecimiento": ["id_establecimiento PK", "codigo UQ", "nombre", "exige_autorizacion"],
@@ -396,7 +424,7 @@ TABLAS = {
     "ubicacion": ["id_ubicacion PK", "id_establecimiento FK", "id_laboratorio FK",
                   "casillero", "nivel", "posicion"],
     "investigador": ["id_investigador PK", "codigo_institucional UQ", "nombre",
-                     "tipo PERSONA|AREA", "id_laboratorio FK"],
+                     "tipo PERSONA|AREA", "id_laboratorio FK", "id_carrera FK"],
     "insumo": ["id_insumo PK", "nombre_comercial", "tipo LIQUIDO|SOLIDO",
                "unidad_base", "densidad_variable"],
     "insumo_alias": ["id_insumo FK", "alias", "— 27 sembrados"],
@@ -407,11 +435,15 @@ TABLAS = {
     "lote": ["id_lote PK", "id_presentacion FK", "numero_lote",
              "fecha_caducidad", "densidad"],
     "frasco": ["id_frasco PK", "id_lote FK", "id_investigador FK",
-               "id_ubicacion FK", "peso_bruto_g", "tara_g",
-               "peso_neto_actual_g NULL = indeterminado", "fuente_tara"],
+               "id_ubicacion FK", "id_laboratorio_actual FK", "peso_bruto_g",
+               "tara_g", "peso_neto_actual_g NULL = indeterminado",
+               "fuente_tara"],
     "kardex": ["id_movimiento PK", "id_frasco FK", "tipo_movimiento",
                "motivo", "cantidad_g", "densidad_aplicada CONGELADA",
-               "saldo_resultante_g", "registrado_por FK"],
+               "id_densidad_aplicada FK", "id_investigador_origen FK",
+               "id_investigador_destinatario FK", "id_laboratorio_origen FK",
+               "id_laboratorio_destino FK", "saldo_resultante_g",
+               "registrado_por FK"],
     "autorizacion": ["id_autorizacion PK", "id_investigador FK", "id_insumo FK",
                      "cantidad_autorizada_g", "vigencia_desde", "vigencia_hasta",
                      "estado"],
@@ -434,6 +466,9 @@ RELACIONES = [
     ("densidad_vigencia", "presentacion"), ("lote", "presentacion"),
     ("frasco", "lote"), ("frasco", "investigador"), ("frasco", "ubicacion"),
     ("kardex", "frasco"), ("kardex", "investigador"), ("kardex", "usuario"),
+    ("kardex", "densidad_vigencia"), ("kardex", "laboratorio"),
+    ("ubicacion", "establecimiento"), ("usuario_alcance", "laboratorio"),
+    ("investigador", "carrera"),
     ("autorizacion", "investigador"), ("autorizacion", "insumo"),
     ("autorizacion_documento", "autorizacion"),
     ("excepcion", "frasco"), ("excepcion", "kardex"), ("bitacora", "usuario"),
@@ -496,7 +531,7 @@ def secuencia():
              "el frasco entero se pesa antes y después, y el consumo es la resta")
 
     lineas = [
-        ("Operario de\ndocimasia", 80),
+        ("Operario\n(cualquier cuenta)", 80),
         ("InventarioView\n(SPA)", 330),
         ("POST /api/movimientos/\nconsumo-por-pesada", 600),
         ("PostgreSQL\nfn_kardex_antes", 920),
@@ -511,10 +546,10 @@ def secuencia():
         (0, 1, "2 · sirve y vuelve a pesar → bruto_despues", E_MSG),
         (1, 1, "3 · muestra el consumo derivado (resta)", E_MSG),
         (1, 2, "4 · POST {bruto_antes, bruto_despues, titular, curso}", E_MSG),
-        (2, 2, "5 · ¿el establecimiento exige autorización?", E_MSG),
-        (2, 3, "6 · INSERT INTO kardex (SALIDA, consumo_laboratorio)", E_MSG),
-        (3, 3, "7 · ¿bruto_antes = tara + saldo?", E_MSG),
-        (3, 3, "8 · ¿hay saldo? ¿es su custodio? ¿tiene tara?", E_MSG),
+        (2, 2, "5 · ¿bruto_antes = tara + saldo?  (lo comprueba la API)", E_MSG),
+        (2, 2, "6 · ¿el establecimiento exige autorización?  (la API)", E_MSG),
+        (2, 3, "7 · INSERT INTO kardex (SALIDA, consumo_laboratorio)", E_MSG),
+        (3, 3, "8 · ¿hay saldo? ¿es su custodio? ¿tiene tara?  (disparador)", E_MSG),
         (3, 4, "9 · escribe el movimiento y actualiza el saldo", E_MSG),
         (4, 2, "10 · saldo_resultante_g", E_RET),
         (2, 1, "11 · 201 · ConsumoOut con la densidad congelada", E_RET),
@@ -547,27 +582,29 @@ def secuencia():
                 f"</mxGeometry></mxCell>")
             y += 60
 
-    p.caja("El camino que NO cuadra\n\n"
-           "Si en el paso 7 la primera pesada no coincide con\n"
-           "tara + saldo, el servidor responde 409\n"
-           "PESADA_NO_CUADRA: significa que salió producto\n"
-           "sin registrarse.\n\n"
+    p.caja("El camino que NO cuadra (paso 5)\n\n"
+           "Si la primera pesada no coincide con tara + saldo,\n"
+           "la API responde 409 PESADA_NO_CUADRA ANTES de\n"
+           "escribir nada.\n\n"
+           "El descuadre va en los DOS sentidos:\n"
+           "  · falta producto  → salió sin registrarse\n"
+           "  · sobra producto  → entró sin registrarse\n\n"
            "Reenviar con ajustar_diferencia: true lo\n"
-           "regulariza con un movimiento de ajuste PROPIO,\n"
-           "anterior al consumo. El descuadre queda escrito,\n"
-           "no absorbido.",
-           E_NOTA + ROJO, 60, 1000, 460, 140)
+           "regulariza con un movimiento propio y anterior al\n"
+           "consumo — ENTRADA si sobra, SALIDA si falta. El\n"
+           "descuadre queda escrito, no absorbido.",
+           E_NOTA + ROJO, 60, 1000, 460, 145)
 
-    p.caja("Por qué las barreras viven en PostgreSQL\n\n"
-           "Los pasos 7 y 8 los hace un disparador, no la API.\n"
-           "Un INSERT a mano con psql choca contra la misma\n"
-           "regla: no se puede rodear saltándose la aplicación,\n"
-           "que es la única forma de que valga en un sistema\n"
-           "fiscalizado.\n\n"
-           "La densidad se congela en el movimiento (US-036):\n"
-           "si mañana se corrige la del lote, este consumo\n"
-           "sigue diciendo con qué número se calculó.",
-           E_NOTA, 570, 1000, 470, 140)
+    p.caja("Quién comprueba qué, que no es lo mismo\n\n"
+           "Pasos 5 y 6 los hace LA API, antes de escribir: se\n"
+           "pueden rodear con un INSERT a mano.\n\n"
+           "El paso 8 lo hace un DISPARADOR de PostgreSQL:\n"
+           "saldo, custodia y tara se comprueban aunque el\n"
+           "INSERT venga por psql. Esa es la parte que vale en\n"
+           "un sistema fiscalizado.\n\n"
+           "El endpoint NO exige rol: lo llama cualquier cuenta\n"
+           "autenticada. La densidad se congela (US-036).",
+           E_NOTA, 570, 1000, 470, 145)
     return p
 
 

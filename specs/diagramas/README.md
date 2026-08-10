@@ -26,9 +26,30 @@ los 6 roles de `permisos.ts`, los códigos de error de las migraciones—, así 
 regenerarlo es la forma de que siga siendo cierto. Si cambias el sistema, cambia
 `generar_diagramas.py` y vuelve a ejecutarlo.
 
-Los diagramas se verificaron contra el código con revisores independientes: cada
-página se contrastó con las rutas, el esquema y los disparadores reales, y cada
-reproche pasó por un refutador antes de aceptarse.
+## Verificados contra el código, y corregidos
+
+Cada página se contrastó con las rutas, el esquema y los disparadores reales por
+revisores independientes, y **cada reproche pasó por un refutador** antes de
+aceptarse. Salieron **24 errores confirmados** y los 24 están corregidos.
+
+No eran erratas. Los que más duelen:
+
+| Decía el diagrama | Dice el código |
+|---|---|
+| El Auditor «audita la bitácora» | **Ninguna ruta lee la bitácora**, y `AUDITOR` no aparece en ningún `require_roles` |
+| Iniciar y cerrar sesión «include» registrar en bitácora | El logout no escribe nada; la fila del login es un efecto colateral del `UPDATE usuario` |
+| «Ninguno puede hacer lo del otro» | `POST /api/usuarios` exige el campo `roles` y lo persiste: el ADMIN_TECNICO **sí** fija los roles iniciales |
+| Todos los rechazos los impone PostgreSQL | `PESADA_NO_CUADRA` y `AUTORIZACION_INSUFICIENTE` **los impone la API**, y por tanto se pueden rodear por SQL |
+| La pesada la comprueba un disparador | La comprueba la API **antes** de escribir |
+| `rol.codigo_rol PK` | La columna se llama `rol.codigo` |
+| Quien pide «etanol» lo encuentra por alias | Etanol, metanol y nítrico tienen **cero alias sembrados** |
+
+Faltaban además cinco claves ajenas de `kardex`, una de `frasco`, una de
+`investigador` y las columnas de bloqueo de cuenta.
+
+**La lección va más allá del dibujo.** Un diagrama es una afirmación sobre el
+sistema, y una afirmación sin verificar envejece hacia la mentira más rápido que
+el código. Si se toca `generar_diagramas.py`, conviene repetir la verificación.
 
 ## Convenciones
 
