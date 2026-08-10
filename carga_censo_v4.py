@@ -936,11 +936,8 @@ def emitir(datos, descartadas, reusar: bool = False) -> str:
         w("-- ─── presentaciones ───────────────────────────────────────────────")
         for p in sorted(datos["presentaciones"], key=lambda x: x["id"]):
             if p["codigo_bf_sunat"]:
-                w(f"UPDATE lote SET id_presentacion = {sql(p['id'])} WHERE id_presentacion IN (SELECT id_presentacion FROM presentacion WHERE normalizar_busqueda(codigo_bf_sunat) = normalizar_busqueda({sql(p['codigo_bf_sunat'])}) AND id_presentacion <> {sql(p['id'])});")
-                w(f"DELETE FROM presentacion WHERE normalizar_busqueda(codigo_bf_sunat) = normalizar_busqueda({sql(p['codigo_bf_sunat'])}) AND id_presentacion <> {sql(p['id'])};")
+                w(f"UPDATE presentacion SET codigo_bf_sunat = id_presentacion WHERE normalizar_busqueda(codigo_bf_sunat) = normalizar_busqueda({sql(p['codigo_bf_sunat'])}) AND id_presentacion <> {sql(p['id'])};")
             w("INSERT INTO presentacion (id_presentacion, id_insumo, codigo_bf_sunat,")
-
-
             w("  codigo_presentacion, concentracion, capacidad, unidad, tipo_envase,")
             w("  equivalencia_g, densidad, vigencia_desde, estado)")
             w(f"VALUES ({sql(p['id'])}, {sql(p['id_insumo'])}, "
@@ -953,6 +950,10 @@ def emitir(datos, descartadas, reusar: bool = False) -> str:
             w("    codigo_bf_sunat = EXCLUDED.codigo_bf_sunat,")
             w("    equivalencia_g = EXCLUDED.equivalencia_g,")
             w("    densidad = EXCLUDED.densidad;")
+            if p["codigo_bf_sunat"]:
+                w(f"UPDATE lote SET id_presentacion = {sql(p['id'])} WHERE id_presentacion IN (SELECT id_presentacion FROM presentacion WHERE codigo_bf_sunat = id_presentacion);")
+                w(f"DELETE FROM presentacion WHERE codigo_bf_sunat = id_presentacion;")
+
         w("")
 
         w("-- ─── densidades versionadas (US-01 · fuente y vigencia) ───────────")
