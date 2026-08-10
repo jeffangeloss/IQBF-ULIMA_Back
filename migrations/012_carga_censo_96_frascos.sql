@@ -1078,6 +1078,9 @@ VALUES ('IQF1123', 'Carbonato De Potasio', 'SOLIDO', 'g', FALSE, 'VIGENTE')
     tipo = EXCLUDED.tipo,
     densidad_variable = EXCLUDED.densidad_variable;
 
+-- ─── sanear densidades invalidas en lotes existentes ─────────────
+UPDATE lote l SET densidad = NULL FROM presentacion p JOIN insumo i ON i.id_insumo = p.id_insumo WHERE l.id_presentacion = p.id_presentacion AND (i.tipo = 'SOLIDO' OR NOT i.densidad_variable) AND l.densidad IS NOT NULL;
+
 -- ─── presentaciones ───────────────────────────────────────────────
 UPDATE presentacion SET codigo_bf_sunat = id_presentacion WHERE normalizar_busqueda(codigo_bf_sunat) = normalizar_busqueda('000111') AND id_presentacion <> 'IQF0102-111';
 INSERT INTO presentacion (id_presentacion, id_insumo, codigo_bf_sunat,
