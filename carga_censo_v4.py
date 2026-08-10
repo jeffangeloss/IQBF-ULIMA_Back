@@ -434,7 +434,7 @@ def leer_censo(filas_pedidas: list[int] | None):
                 filas[n][idx["Capacidad nominal"]] = capacidad
             correcciones.append(f"{cod} → {nuevo}: {motivo}")
 
-        # Normalización 1: Códigos SUNAT de 7 dígitos a 6 dígitos (eliminación de cero sobrante)
+        # Normalización 1: Códigos SUNAT de 7 dígitos a 6 dígitos (eliminación de cero sobrante de IA)
         sunat_val = str(filas[n][idx["Código SUNAT"]] or "").strip()
         if sunat_val and len(sunat_val) == 7 and sunat_val.startswith("0"):
             sunat_norm = sunat_val.lstrip("0").zfill(6)
@@ -450,6 +450,21 @@ def leer_censo(filas_pedidas: list[int] | None):
         if cod in ("IQF0102-123-106", "IQF0102-123-107") and str(filas[n][idx["Código SUNAT"]] or "").endswith("112"):
             filas[n][idx["Código SUNAT"]] = "000123"
             correcciones.append(f"Fila {n} {cod}: Código SUNAT '000112' corregido a '000123' acorde al segmento interno de etiqueta")
+
+        # Normalización 4: Filas 36 y 37 (IQF0106-124-23/24) alineación con ALL.DATA (código SUNAT 000122 de nítrico 2.5L)
+        if cod in ("IQF0106-124-23", "IQF0106-124-24"):
+            filas[n][idx["Código interno"]] = cod.replace("-124-", "-122-")
+            filas[n][idx["Código SUNAT"]] = "000122"
+            correcciones.append(f"Fila {n} {cod}: corregido a ALL.DATA -> {filas[n][idx['Código interno']]} (SUNAT 000122)")
+
+        # Normalización 5: Fila 39 (IQF0106-109-26) alineación con ALL.DATA (código SUNAT 000134 de nítrico 2.5L)
+        if cod == "IQF0106-109-26":
+            filas[n][idx["Código interno"]] = "IQF0106-134-26"
+            filas[n][idx["Código SUNAT"]] = "000134"
+            correcciones.append(f"Fila {n} {cod}: corregido a ALL.DATA -> IQF0106-134-26 (SUNAT 000134)")
+
+
+
 
 
     limpias, descartadas = [], []
