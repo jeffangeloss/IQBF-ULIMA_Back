@@ -3,7 +3,7 @@
 -- Generado por carga_censo_v4.py · fecha de corte 2026-08-05
 -- Fuente: Cimiento_Censo_IQBF_v5_2026-08-06.xlsx
 --
--- 96 frascos cargados · 6 descartados por el pre-flight
+-- 97 frascos cargados · 5 descartados por el pre-flight
 --
 -- Un campo vacío YA NO descarta: el frasco entra con el hueco marcado
 -- (sin código SUNAT, sin densidad, sin fecha) y la aplicación lo enseña
@@ -18,8 +18,6 @@
 --   fila 187  SIN-CODIGO-02
 --       · C9 el envase no está rotulado: su código es un provisional del censo, no existe en el frasco
 --   fila 188  SIN-CODIGO-03
---       · C9 el envase no está rotulado: su código es un provisional del censo, no existe en el frasco
---   fila 189  SIN-CODIGO-04
 --       · C9 el envase no está rotulado: su código es un provisional del censo, no existe en el frasco
 --   fila 200  IQF1413-1
 --       · C4 falta Presentación (L11)
@@ -231,6 +229,17 @@ INSERT INTO ubicacion (codigo, nombre, id_establecimiento, id_laboratorio, casil
 SELECT 'C1-N2-P19', 'Casillero 1 · Nivel 2 · pos. 19', e.id_establecimiento,
   (SELECT id_laboratorio FROM laboratorio WHERE nombre = 'Docimasia'),
   1, NULL, 2, '19'
+  FROM establecimiento e ORDER BY e.id_establecimiento LIMIT 1
+  ON CONFLICT (codigo) DO UPDATE SET
+    nombre = EXCLUDED.nombre, casillero = EXCLUDED.casillero,
+    id_establecimiento = EXCLUDED.id_establecimiento,
+    id_laboratorio = EXCLUDED.id_laboratorio,
+    nombre_puerta = EXCLUDED.nombre_puerta, nivel = EXCLUDED.nivel,
+    posicion = EXCLUDED.posicion;
+INSERT INTO ubicacion (codigo, nombre, id_establecimiento, id_laboratorio, casillero, nombre_puerta, nivel, posicion)
+SELECT 'C1-N2-P20', 'Casillero 1 · Nivel 2 · pos. 20', e.id_establecimiento,
+  (SELECT id_laboratorio FROM laboratorio WHERE nombre = 'Docimasia'),
+  1, NULL, 2, '20'
   FROM establecimiento e ORDER BY e.id_establecimiento LIMIT 1
   ON CONFLICT (codigo) DO UPDATE SET
     nombre = EXCLUDED.nombre, casillero = EXCLUDED.casillero,
@@ -965,6 +974,7 @@ BEGIN
     VALUES (1, 'Administrador Sistema', 'admin@aloe.ulima.edu.pe', '$2b$12$eImiTXuWVxfM37uY4JANjO5E/151.7.0.0.0.0.0.0.0.0.0.0.0.0.0', 'ADMINISTRADOR', 'ACTIVO')
     ON CONFLICT DO NOTHING;
   END IF;
+  PERFORM setval(pg_get_serial_sequence('usuario', 'id_usuario'), (SELECT COALESCE(MAX(id_usuario), 1) FROM usuario));
 END;
 $$;
 
@@ -2001,8 +2011,8 @@ WHERE 'IQF0304-2-5L' IS NOT NULL
      AND l.numero_lote IS NOT DISTINCT FROM 'I1316817 401');
 INSERT INTO lote (id_presentacion, numero_lote, grado_pureza,
   fecha_ingreso, fecha_caducidad, densidad, estado)
-SELECT 'IQF0304-2-5L', 'I1366383 433', 'EMSURE, ACS, ISO, Reag. Ph Eur, for',
-  NULL, '2029-07-31', NULL, 'ACTIVO'
+SELECT 'IQF0304-2-5L', 'I1366383 433', 'EMSURE, ACS, ISO, Reag. Ph Eur',
+  '2025-04-23', '2029-07-31', NULL, 'ACTIVO'
 WHERE 'IQF0304-2-5L' IS NOT NULL
   AND NOT EXISTS (SELECT 1 FROM lote l
    WHERE l.id_presentacion = 'IQF0304-2-5L'
@@ -4761,6 +4771,35 @@ SELECT 'IQF0304-37', l.id_lote,
     fecha_pesaje = EXCLUDED.fecha_pesaje,
     condicion_envase = EXCLUDED.condicion_envase;
 
+-- fila 189 del censo
+INSERT INTO frasco (id_frasco, id_lote, id_investigador, id_ubicacion,
+  id_laboratorio_actual,
+  precision_ubicacion, peso_bruto_g, tara_g, peso_neto_inicial_g,
+  peso_neto_actual_g,
+  volumen_inicial_ml, fuente_tara, fecha_pesaje, condicion_envase,
+  existe, estado, observaciones)
+SELECT 'IQF0304-31', l.id_lote,
+  (SELECT id_investigador FROM investigador WHERE nombre = 'W. Hernández'),
+  (SELECT id_ubicacion FROM ubicacion WHERE codigo = 'C1-N2-P20'),
+  (SELECT id_laboratorio FROM laboratorio WHERE nombre = 'Docimasia'),
+  'exacta — por adhesivo naranja', 3220.5500, 1247.8000, 1972.7500, 0,
+  2497.1519, 'Etiqueta interna / evidencia fotográfica', '2026-08-05 00:00:00', 'Sellado',
+  TRUE, 'EN_USO', 'DATOS QUE NO APARECEN EN NINGUNA FUENTE: responsable. Se buscó en la fotografía del frasco (etiqueta del fabricante y rótulo interno), en el censo y en las fichas CONTROL DE REACTIVOS de los libros operativos. Solicitar al laboratorio. Ver SOLICITUD_DATOS_FALTANTES.md. Evidencia fotográfica conciliada: Sellado. Bruto 3220.55 g. Tara 1247.79 g (Etiqueta interna / evidencia fotográfica). Neto físico 1972.76 g. Frasco de etanol absoluto EMSURE de 2.5 L, catalogo 1.00983.2500, asignado al laboratorio DOCIMASIA (etiqueta blanca manuscrita pegada en el hombro).'
+  FROM lote l
+ WHERE l.id_presentacion = 'IQF0304-2-5L'
+   AND l.numero_lote IS NOT DISTINCT FROM 'I1366383 433'
+  ON CONFLICT (id_frasco) DO UPDATE SET
+    id_investigador = EXCLUDED.id_investigador,
+    id_ubicacion = EXCLUDED.id_ubicacion,
+    id_laboratorio_actual = COALESCE(EXCLUDED.id_laboratorio_actual,
+                                     frasco.id_laboratorio_actual),
+    peso_bruto_g = EXCLUDED.peso_bruto_g,
+    tara_g = EXCLUDED.tara_g,
+    peso_neto_inicial_g = EXCLUDED.peso_neto_inicial_g,
+    fuente_tara = EXCLUDED.fuente_tara,
+    fecha_pesaje = EXCLUDED.fecha_pesaje,
+    condicion_envase = EXCLUDED.condicion_envase;
+
 -- fila 190 del censo
 INSERT INTO frasco (id_frasco, id_lote, id_investigador, id_ubicacion,
   id_laboratorio_actual,
@@ -6222,6 +6261,20 @@ SELECT 'IQF0304-37', 'ENTRADA', 'censo_inicial', 1974.7900,
 INSERT INTO kardex (id_frasco, tipo_movimiento, motivo, cantidad_g,
   cantidad_registrada, unidad_registrada, id_investigador_destinatario,
   fecha_hora, fecha_operacion, registrado_por, saldo_resultante_g)
+SELECT 'IQF0304-31', 'ENTRADA', 'censo_inicial', 1972.7500,
+  1972.7500, 'g',
+  (SELECT id_investigador FROM investigador WHERE nombre = 'W. Hernández'),
+  '2026-08-05 00:00:00', '2026-08-05', u.id_usuario, 0
+  FROM usuario u
+  WHERE EXISTS (SELECT 1 FROM frasco f2
+     WHERE f2.id_frasco = 'IQF0304-31')
+    AND NOT EXISTS (SELECT 1 FROM kardex k
+     WHERE k.id_frasco = 'IQF0304-31'
+       AND k.motivo = 'censo_inicial')
+  ORDER BY u.id_usuario LIMIT 1;
+INSERT INTO kardex (id_frasco, tipo_movimiento, motivo, cantidad_g,
+  cantidad_registrada, unidad_registrada, id_investigador_destinatario,
+  fecha_hora, fecha_operacion, registrado_por, saldo_resultante_g)
 SELECT 'IQF0304-11', 'ENTRADA', 'censo_inicial', 1562.1800,
   1562.1800, 'g',
   (SELECT id_investigador FROM investigador WHERE nombre = 'W. Hernández'),
@@ -6456,6 +6509,7 @@ BEGIN
     ('IQF0304-27'),
     ('IQF0304-33'),
     ('IQF0304-37'),
+    ('IQF0304-31'),
     ('IQF0304-11'),
     ('IQF0304-12'),
     ('IQF0304-13'),

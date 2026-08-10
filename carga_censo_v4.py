@@ -463,6 +463,15 @@ def leer_censo(filas_pedidas: list[int] | None):
             filas[n][idx["Código SUNAT"]] = "000134"
             correcciones.append(f"Fila {n} {cod}: corregido a ALL.DATA -> IQF0106-134-26 (SUNAT 000134)")
 
+        # Normalización 6: Fila 189 (SIN-CODIGO-04) asignado por laboratorio a IQF0304-31 (W. Hernández, Docimasia)
+        if cod == "SIN-CODIGO-04":
+            filas[n][idx["Código interno"]] = "IQF0304-31"
+            if "Investigador (registrado)" in idx:
+                filas[n][idx["Investigador (registrado)"]] = "W. Hernández"
+            if "Laboratorio (etiqueta)" in idx:
+                filas[n][idx["Laboratorio (etiqueta)"]] = "Docimasia"
+            correcciones.append(f"Fila {n} {cod}: asignado según datos de laboratorio -> IQF0304-31 (Docimasia / W. Hernández)")
+
 
 
 
