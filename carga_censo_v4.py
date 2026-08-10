@@ -434,6 +434,24 @@ def leer_censo(filas_pedidas: list[int] | None):
                 filas[n][idx["Capacidad nominal"]] = capacidad
             correcciones.append(f"{cod} → {nuevo}: {motivo}")
 
+        # Normalización 1: Códigos SUNAT de 7 dígitos a 6 dígitos (eliminación de cero sobrante)
+        sunat_val = str(filas[n][idx["Código SUNAT"]] or "").strip()
+        if sunat_val and len(sunat_val) == 7 and sunat_val.startswith("0"):
+            sunat_norm = sunat_val.lstrip("0").zfill(6)
+            filas[n][idx["Código SUNAT"]] = sunat_norm
+            correcciones.append(f"Fila {n} {cod}: Código SUNAT {sunat_val} normalizado a 6 dígitos -> {sunat_norm}")
+
+        # Normalización 2: Fila 81 (IQF0401-125-26) lote real de etiqueta en vez de fecha
+        if cod == "IQF0401-125-26" and str(filas[n][idx["Lote"]] or "").startswith("2027"):
+            filas[n][idx["Lote"]] = "I1265114 304"
+            correcciones.append(f"Fila {n} {cod}: Lote '2027-11-30' corregido a lote de etiqueta 'I1265114 304'")
+
+        # Normalización 3: Filas 16 y 17 (IQF0102-123-106/107) alineación de código SUNAT 123
+        if cod in ("IQF0102-123-106", "IQF0102-123-107") and str(filas[n][idx["Código SUNAT"]] or "").endswith("112"):
+            filas[n][idx["Código SUNAT"]] = "000123"
+            correcciones.append(f"Fila {n} {cod}: Código SUNAT '000112' corregido a '000123' acorde al segmento interno de etiqueta")
+
+
     limpias, descartadas = [], []
     for n in sorted(objetivo):
         bloqueos, _avisos = revisar(n, filas[n], idx)

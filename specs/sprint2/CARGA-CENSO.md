@@ -3,7 +3,7 @@
 - Issues: [#21](https://github.com/jeffangeloss/IQBF-ULIMA_Back/issues/21),
   [#22](https://github.com/jeffangeloss/IQBF-ULIMA_Back/issues/22),
   [#63](https://github.com/jeffangeloss/IQBF-ULIMA_Back/issues/63)
-- Estado del Project: En revisión / En curso
+- Estado del Project: Hecho (93 frascos cargados en iqbf_firme con normalización de SUNAT a 6 dígitos y resolución de lotes real)
 
 ## De dónde salen los datos, y cuál manda
 
