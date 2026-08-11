@@ -52,51 +52,121 @@ SELECT v.id, v.nombre, 'SOLIDO', 'VIGENTE', 'g', FALSE
 -- ── 2. Presentaciones ───────────────────────────────────────────────
 -- Una por código Alta SUNAT, como en el resto del maestro: el id de la
 -- presentación es <insumo>-<alta sin ceros> y el código va con sus seis
--- dígitos. Los índices únicos son sobre el código normalizado, por eso
--- se comprueba con NOT EXISTS y no con ON CONFLICT.
+-- dígitos.
+--
+-- El id propuesto NO se da por hecho. Producción lleva cargas anteriores
+-- a estas migraciones, y si ya existe una presentación con este código
+-- SUNAT —aunque tenga otro id— hay que usar ESA y no crear una gemela:
+-- dos presentaciones con el mismo código partirían la declaración en dos
+-- filas. Por eso se resuelve el id y todo lo que sigue cuelga del
+-- resuelto, no del propuesto.
+DROP TABLE IF EXISTS tmp_pres_014;
+CREATE TEMP TABLE tmp_pres_014 (
+    id_propuesto varchar(40) PRIMARY KEY,
+    id_insumo    varchar(20) NOT NULL,
+    sunat        varchar(20) NOT NULL,
+    capacidad    numeric(14,4) NOT NULL,
+    id_resuelto  varchar(40)
+) ON COMMIT DROP;
+
+INSERT INTO tmp_pres_014 (id_propuesto, id_insumo, sunat, capacidad) VALUES
+    ('IQF0705-39',  'IQF0705',  '000039', 1.0000),
+    ('IQF1131-31',  'IQF1131',  '000031', 1.0000),
+    ('IQF11126-40', 'IQF11126', '000040', 1.0000),
+    ('IQF11126-41', 'IQF11126', '000041', 0.5000),
+    ('IQF11126-42', 'IQF11126', '000042', 1.0000),
+    ('IQF11126-43', 'IQF11126', '000043', 0.5000),
+    ('IQF11126-44', 'IQF11126', '000044', 0.2500),
+    ('IQF11127-49', 'IQF11127', '000049', 1.0000),
+    ('IQF11127-96', 'IQF11127', '000096', 1.0000),
+    ('IQF11128-51', 'IQF11128', '000051', 1.0000);
+
+-- 2.a Reutilizar la presentación que ya exista, por código o por id.
+UPDATE tmp_pres_014 t
+   SET id_resuelto = p.id_presentacion
+  FROM presentacion p
+ WHERE normalizar_busqueda(p.codigo_bf_sunat) = normalizar_busqueda(t.sunat)
+    OR p.id_presentacion = t.id_propuesto;
+
+-- 2.b Crear solo las que de verdad faltan.
 INSERT INTO presentacion (id_presentacion, id_insumo, codigo_bf_sunat,
                           codigo_presentacion, capacidad, unidad,
                           tipo_envase, peso_neto_kg, estado, equivalencia_g)
-SELECT v.id_pres, v.id_insumo, v.sunat, v.sunat, v.cap, 'kg',
-       'Botella', v.cap, 'VIGENTE', v.cap * 1000
-  FROM (VALUES
-          ('IQF0705-39',  'IQF0705',  '000039', 1.0000::numeric),
-          ('IQF1131-31',  'IQF1131',  '000031', 1.0000::numeric),
-          ('IQF11126-40', 'IQF11126', '000040', 1.0000::numeric),
-          ('IQF11126-41', 'IQF11126', '000041', 0.5000::numeric),
-          ('IQF11126-42', 'IQF11126', '000042', 1.0000::numeric),
-          ('IQF11126-43', 'IQF11126', '000043', 0.5000::numeric),
-          ('IQF11126-44', 'IQF11126', '000044', 0.2500::numeric),
-          ('IQF11127-49', 'IQF11127', '000049', 1.0000::numeric),
-          ('IQF11127-96', 'IQF11127', '000096', 1.0000::numeric),
-          ('IQF11128-51', 'IQF11128', '000051', 1.0000::numeric)
-       ) AS v(id_pres, id_insumo, sunat, cap)
- WHERE NOT EXISTS (SELECT 1 FROM presentacion p WHERE p.id_presentacion = v.id_pres)
-   AND NOT EXISTS (SELECT 1 FROM presentacion p
-                    WHERE normalizar_busqueda(p.codigo_bf_sunat) = normalizar_busqueda(v.sunat)
-                       OR normalizar_busqueda(p.codigo_presentacion) = normalizar_busqueda(v.sunat));
+SELECT t.id_propuesto, t.id_insumo, t.sunat,
+       -- `codigo_presentacion` tiene índice único propio: si el código ya
+       -- está tomado por otra presentación, se deja en NULL antes que
+       -- reventar la carga. El código SUNAT, que es el que declara, se
+       -- conserva igual.
+       CASE WHEN EXISTS (SELECT 1 FROM presentacion p
+                          WHERE normalizar_busqueda(p.codigo_presentacion)
+                              = normalizar_busqueda(t.sunat))
+            THEN NULL ELSE t.sunat END,
+       t.capacidad, 'kg', 'Botella', t.capacidad, 'VIGENTE', t.capacidad * 1000
+  FROM tmp_pres_014 t
+ WHERE t.id_resuelto IS NULL;
+
+UPDATE tmp_pres_014 t SET id_resuelto = t.id_propuesto WHERE t.id_resuelto IS NULL;
+
+-- 2.c Si algo quedó sin resolver, decirlo con nombre y apellido: un
+--     despliegue no puede fallar dejando adivinar por qué.
+DO $$
+DECLARE sin_resolver text;
+BEGIN
+    SELECT string_agg(t.id_propuesto || ' (SUNAT ' || t.sunat || ')', ', ' ORDER BY t.id_propuesto)
+      INTO sin_resolver
+      FROM tmp_pres_014 t
+     WHERE NOT EXISTS (SELECT 1 FROM presentacion p WHERE p.id_presentacion = t.id_resuelto);
+    IF sin_resolver IS NOT NULL THEN
+        RAISE EXCEPTION 'Migración 014: no se pudo crear ni encontrar la presentación de %', sin_resolver;
+    END IF;
+    RAISE NOTICE 'Migración 014: % presentaciones resueltas (% reutilizadas de las que ya había).',
+        (SELECT count(*) FROM tmp_pres_014),
+        (SELECT count(*) FROM tmp_pres_014 WHERE id_resuelto <> id_propuesto);
+END $$;
+
+-- Deja constancia de cada equivalencia en el log del despliegue: si algún
+-- frasco acaba colgando de una presentación ajena, aquí se ve por qué.
+DO $$
+DECLARE fila record;
+BEGIN
+    FOR fila IN SELECT id_propuesto, id_resuelto, sunat FROM tmp_pres_014
+                 WHERE id_resuelto <> id_propuesto ORDER BY id_propuesto
+    LOOP
+        RAISE NOTICE '  SUNAT % → se reutiliza % en lugar de crear %',
+            fila.sunat, fila.id_resuelto, fila.id_propuesto;
+    END LOOP;
+END $$;
 
 -- ── 3. Lotes ────────────────────────────────────────────────────────
 -- `numero_lote` es el Charge/Lot impreso por el fabricante; donde la
 -- etiqueta no lo trae queda NULL, no un marcador inventado.
+DROP TABLE IF EXISTS tmp_lote_014;
+CREATE TEMP TABLE tmp_lote_014 (
+    id_propuesto varchar(40) NOT NULL,
+    numero_lote  varchar(120),
+    grado        varchar(120),
+    caduca       date
+) ON COMMIT DROP;
+
+INSERT INTO tmp_lote_014 (id_propuesto, numero_lote, grado, caduca) VALUES
+    ('IQF0705-39',  '82750',        'Q.P.',                          NULL),
+    ('IQF1131-31',  'A136045 845',  'pro analysi ACS, ISO',          DATE '2013-08-31'),
+    ('IQF11126-40', NULL,           'Q.P.',                          NULL),
+    ('IQF11126-41', NULL,           'Q.P.',                          NULL),
+    ('IQF11126-42', '61410',        'extra pure, 99-100,5 %',        NULL),
+    ('IQF11126-43', NULL,           'Industrial / técnico',          NULL),
+    ('IQF11126-44', 'S 57 VI 353',  'Industrial / técnico',          NULL),
+    ('IQF11127-49', '13464',        'anhydrous, extra pure',         NULL),
+    ('IQF11127-96', '1.06649.1000', 'EMSURE ACS, ISO, Reag. Ph Eur', DATE '2021-04-30'),
+    ('IQF11128-51', '31449',        'für Analyse, Reag. ACS',        NULL);
+
 INSERT INTO lote (id_presentacion, numero_lote, grado_pureza, fecha_caducidad, estado)
-SELECT v.id_pres, v.lote, v.grado, v.caduca, 'ACTIVO'
-  FROM (VALUES
-          ('IQF0705-39',  '82750',          'Q.P.',                    NULL::date),
-          ('IQF1131-31',  'A136045 845',    'pro analysi ACS, ISO',    DATE '2013-08-31'),
-          ('IQF11126-40', NULL,             'Q.P.',                    NULL),
-          ('IQF11126-41', NULL,             'Q.P.',                    NULL),
-          ('IQF11126-42', '61410',          'extra pure, 99-100,5 %',  NULL),
-          ('IQF11126-43', NULL,             'Industrial / técnico',    NULL),
-          ('IQF11126-44', 'S 57 VI 353',    'Industrial / técnico',    NULL),
-          ('IQF11127-49', '13464',          'anhydrous, extra pure',   NULL),
-          ('IQF11127-96', '1.06649.1000',   'EMSURE ACS, ISO, Reag. Ph Eur', DATE '2021-04-30'),
-          ('IQF11128-51', '31449',          'für Analyse, Reag. ACS',  NULL)
-       ) AS v(id_pres, lote, grado, caduca)
- WHERE EXISTS (SELECT 1 FROM presentacion p WHERE p.id_presentacion = v.id_pres)
-   AND NOT EXISTS (SELECT 1 FROM lote l
-                    WHERE l.id_presentacion = v.id_pres
-                      AND l.numero_lote IS NOT DISTINCT FROM v.lote);
+SELECT p.id_resuelto, t.numero_lote, t.grado, t.caduca, 'ACTIVO'
+  FROM tmp_lote_014 t
+  JOIN tmp_pres_014 p ON p.id_propuesto = t.id_propuesto
+ WHERE NOT EXISTS (SELECT 1 FROM lote l
+                    WHERE l.id_presentacion = p.id_resuelto
+                      AND l.numero_lote IS NOT DISTINCT FROM t.numero_lote);
 
 -- ── 4. Frascos ──────────────────────────────────────────────────────
 -- Los seis con tara documentada nacen con saldo 0 y lo sube el kardex.
@@ -186,7 +256,13 @@ SELECT v.id_frasco, l.id_lote, v.bruto, v.tara,
            '745,76 g, peso frasco 359,5 g. Neto 386,26 g contra 556,44 g del RM04 de '
            'setiembre de 2025: 170,18 g consumidos en once meses sin registrar.')
        ) AS v(id_frasco, id_pres, bruto, tara, fuente, condicion, nota)
-  JOIN lote l ON l.id_presentacion = v.id_pres
+  -- El lote se busca por presentación RESUELTA y por su número, no solo por
+  -- la presentación: si ya había otros lotes colgando de ella, un join laxo
+  -- daría un frasco por lote.
+  JOIN tmp_pres_014 p ON p.id_propuesto = v.id_pres
+  JOIN tmp_lote_014 t ON t.id_propuesto = v.id_pres
+  JOIN lote l ON l.id_presentacion = p.id_resuelto
+             AND l.numero_lote IS NOT DISTINCT FROM t.numero_lote
  WHERE NOT EXISTS (SELECT 1 FROM frasco f WHERE f.id_frasco = v.id_frasco);
 
 -- ── 5. Saldo inicial de los que sí tienen tara ──────────────────────
