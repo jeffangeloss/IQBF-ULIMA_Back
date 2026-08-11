@@ -4,18 +4,30 @@ Issue: [IQBF-ULIMA_Front #4](https://github.com/jeffangeloss/IQBF-ULIMA_Front/is
 
 Sprint: S0 — 15 al 28 de julio de 2026
 
-Estado técnico: **Bloqueado**
+Estado técnico: **Implementado · pendiente de aprobación del Responsable IQBF**
 
-## Motivo del bloqueo
+## Estado de la implementación
 
-Existe evidencia histórica de junio de 2026, incluidos el RM04, libros de
-líquidos/sólidos y justificaciones de consumo. Sin embargo, en esta sesión no
-está disponible el motor especializado para abrir y verificar los libros
-Excel celda por celda. Tampoco existe constancia del Responsable IQBF
-aprobando columnas, códigos, unidades y redondeo.
+El endpoint `GET /api/inventario/reportes/rm04` (`app/modules/inventario/reportes_rm04.py`)
+exporta el libro del periodo con cuatro hojas:
 
-Por ello se define a continuación un contrato provisional completo, pero no
-se lo presenta como formato institucional aprobado.
+- `RDO` — la plantilla oficial que se presenta a SUNAT. Su estructura se
+  cotejó celda por celda contra el archivo real
+  `09.RM04 Setiembre 2025 SUNAT.xlsx`: las 19 columnas y las 25 celdas
+  combinadas de la cabecera coinciden 1:1. `tests/test_reportes_rm04.py`
+  fija esa forma para que un cambio de formato tenga que ser deliberado.
+- `CONTROL`, `MOVIMIENTOS` y `RECONCILIACION` — el contrato interno descrito
+  más abajo, como sustento de auditoría de lo declarado en `RDO`.
+
+Lo que **no** está cerrado: la aprobación del Responsable IQBF sobre formato,
+códigos, columnas, unidades y redondeo. Hasta que exista esa constancia, el
+libro se emite con `estado = BORRADOR` en la hoja `CONTROL`.
+
+Diferencia conocida frente al histórico: la plantilla de setiembre de 2025
+trae la columna de verificación `I * J = K` descuadrada en varias filas (por
+ejemplo la 6 y la 22, donde `Cant. KG` supera el neto de un envase lleno).
+El generador calcula esa columna en vez de copiarla, así que el descuadre
+histórico no se arrastra.
 
 ## Periodo histórico seleccionado
 
@@ -146,6 +158,9 @@ contrato y se agregará una prueba de regresión.
 
 - [ ] El Responsable IQBF aprobó formato, códigos, columnas, unidades y
   redondeo.
+- [x] La hoja `RDO` se comparó contra la plantilla oficial y coincide en las
+  19 columnas y en las 25 celdas combinadas de la cabecera, con prueba de
+  regresión que lo fija.
 - [x] Se seleccionó por lo menos un periodo histórico real para reconciliar.
 - [x] Las diferencias esperadas y el protocolo de conciliación están
   documentados.

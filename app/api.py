@@ -19,6 +19,9 @@ from app.modules.inventario.router import router as inventario_router
 from app.modules.users.router import router as users_router
 
 
+from app.modules.inventario.reportes_rm04 import router as reportes_rm04_router
+
+
 system_router = APIRouter()
 
 
@@ -38,6 +41,7 @@ ROUTERS = (
     users_router,
     insumos_router,
     inventario_router,
+    reportes_rm04_router,
     autorizaciones_router,
     catalogs_router,
     system_router,
