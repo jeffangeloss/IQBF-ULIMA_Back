@@ -98,12 +98,15 @@ def _filtros(
         params.append(estado_frasco)
     if q:
         # El custodio entra en la caja de texto: «lo de Ponce» es una búsqueda
-        # tan legítima como «HCl».
+        # tan legítima como «HCl». Y viaja por `investigador_alias`, así que
+        # las grafías con las que el laboratorio lleva años escribiendo el
+        # nombre —«CHASQUIBOLL», «A. GUTARRA», «Prof. Yacono»— siguen
+        # encontrando a la persona aunque el maestro ya esté normalizado.
         condiciones.append(
             "(fn_frasco_coincide(v.id_frasco, v.id_insumo, v.nombre_comercial,"
             " v.codigo_bf_sunat, v.id_presentacion, v.numero_lote, %s)"
-            " OR normalizar_busqueda(COALESCE(v.custodio, ''))"
-            "    LIKE '%%' || normalizar_busqueda(%s) || '%%')"
+            " OR fn_investigador_coincide(v.id_investigador,"
+            "                             COALESCE(v.custodio, ''), %s))"
         )
         params.extend([q, q])
     if laboratorio is not None:
