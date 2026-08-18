@@ -85,12 +85,15 @@ UPDATE frasco f
   JOIN investigador d ON d.nombre = t.destino
  WHERE t.accion = 'FUSIONAR' AND f.id_investigador = v.id_investigador;
 
-UPDATE kardex k
-   SET id_investigador_destinatario = d.id_investigador
-  FROM tmp_limpieza_020 t
-  JOIN investigador v ON v.nombre = t.nombre_actual
-  JOIN investigador d ON d.nombre = t.destino
- WHERE t.accion = 'FUSIONAR' AND k.id_investigador_destinatario = v.id_investigador;
+-- El KÁRDEX NO SE TOCA. `fn_kardex_inmutable` lo prohíbe, y con razón: un
+-- asiento registra lo que ocurrió, incluido a qué ficha de investigador
+-- se entregó el producto ese día. Reescribirlo para que apunte al nombre
+-- nuevo sería falsear el histórico de un inventario fiscalizado.
+--
+-- Los asientos que apunten a una grafía retirada siguen apuntándola. Por
+-- eso las filas se INACTIVAN y no se borran: la fila permanece, deja de
+-- ofrecerse en el desplegable, y el kárdex conserva su referencia intacta.
+-- Este intento de UPDATE tumbó el despliegue anterior.
 
 -- ── 3. Renombrar a quien solo está mal escrito ──────────────────────
 INSERT INTO investigador_alias (alias, id_investigador, fuente)
