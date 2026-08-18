@@ -44,6 +44,20 @@
 BEGIN;
 SET LOCAL search_path TO iqbf, public, pg_catalog;
 
+-- ── 0. El check de adscripción es NOT VALID a propósito ─────────────
+-- La migración 009 lo añadió NOT VALID porque La Cruz y Muedas no tienen
+-- carrera ni laboratorio y se dejaron así a conciencia, pendientes de
+-- confirmar con el laboratorio. NOT VALID tolera la fila que ya existía,
+-- pero CUALQUIER update sobre ella vuelve a evaluar el check — y este
+-- rename es un update. Sin esto, la migración tumba el arranque en
+-- producción, que es exactamente lo que pasó en el despliegue anterior.
+--
+-- Se retira y se repone NOT VALID, con lo que el estado final es idéntico
+-- al de partida: el check sigue vigente para lo nuevo y sigue tolerando
+-- las dos filas sin adscripción. Renombrar a alguien no puede exigir
+-- inventarle un departamento.
+ALTER TABLE investigador DROP CONSTRAINT IF EXISTS ck_investigador_adscripcion;
+
 -- ── 1. Alias: la grafía vieja sigue encontrando a la persona ────────
 CREATE TABLE IF NOT EXISTS investigador_alias (
     alias            VARCHAR(120) PRIMARY KEY,
@@ -145,7 +159,17 @@ AS $$
          );
 $$;
 
--- ── 5. Verificación ─────────────────────────────────────────────────
+-- ── 6. Reponer el check tal como estaba ─────────────────────────────
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_investigador_adscripcion') THEN
+    ALTER TABLE investigador ADD CONSTRAINT ck_investigador_adscripcion
+      CHECK (id_carrera IS NOT NULL OR id_laboratorio IS NOT NULL)
+      NOT VALID;
+  END IF;
+END $$;
+
+-- ── 7. Verificación ─────────────────────────────────────────────────
 DO $$
 DECLARE sin_canon text; n_alias int; dup int;
 BEGIN
@@ -161,6 +185,10 @@ BEGIN
     ) d;
     IF dup > 0 THEN
         RAISE EXCEPTION 'Migración 018: el rename dejó % nombres duplicados.', dup;
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_investigador_adscripcion') THEN
+        RAISE EXCEPTION 'Migración 018: el check de adscripción no se repuso.';
     END IF;
 
     SELECT count(*) INTO n_alias FROM investigador_alias;
